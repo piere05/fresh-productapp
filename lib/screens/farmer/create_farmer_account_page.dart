@@ -1,4 +1,8 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CreateFarmerAccountPage extends StatefulWidget {
   const CreateFarmerAccountPage({super.key});
@@ -17,6 +21,7 @@ class _CreateFarmerAccountPageState extends State<CreateFarmerAccountPage> {
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _loading = false;
 
   @override
   void dispose() {
@@ -27,12 +32,63 @@ class _CreateFarmerAccountPageState extends State<CreateFarmerAccountPage> {
     super.dispose();
   }
 
-  void _createAccount() {
-    if (_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Account created successfully (Demo)")),
+  Future<void> _createAccount() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _loading = true);
+
+    try {
+      final auth = FirebaseAuth.instance;
+      final firestore = FirebaseFirestore.instance;
+
+      // 🔍 Check if email already exists
+      final methods = await auth.fetchSignInMethodsForEmail(
+        _emailController.text.trim(),
       );
-      Navigator.pop(context); // back to login
+
+      if (methods.isNotEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Email already exists")));
+        setState(() => _loading = false);
+        return;
+      }
+
+      // 🔐 Create auth user
+      final userCredential = await auth.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      final uid = userCredential.user!.uid;
+
+      // 📄 Add farmer document
+      await firestore.collection('farmers').doc(uid).set({
+        'uid': uid,
+        'name': _nameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'role': 'farmer',
+        'isApproved': false,
+        'isBlocked': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Farmer account created successfully")),
+      );
+
+      Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? "Auth error")));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Something went wrong")));
+    } finally {
+      setState(() => _loading = false);
     }
   }
 
@@ -54,19 +110,17 @@ class _CreateFarmerAccountPageState extends State<CreateFarmerAccountPage> {
               const Icon(Icons.agriculture, size: 70, color: Colors.green),
               const SizedBox(height: 20),
 
-              // NAME
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: "Full Name",
                   prefixIcon: Icon(Icons.person),
                 ),
-                validator: (value) => value!.isEmpty ? "Enter your name" : null,
+                validator: (v) => v!.isEmpty ? "Enter your name" : null,
               ),
 
               const SizedBox(height: 15),
 
-              // EMAIL
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
@@ -74,13 +128,12 @@ class _CreateFarmerAccountPageState extends State<CreateFarmerAccountPage> {
                   labelText: "Email",
                   prefixIcon: Icon(Icons.email),
                 ),
-                validator: (value) =>
-                    !value!.contains("@") ? "Enter valid email" : null,
+                validator: (v) =>
+                    !v!.contains("@") ? "Enter valid email" : null,
               ),
 
               const SizedBox(height: 15),
 
-              // PHONE
               TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
@@ -88,13 +141,12 @@ class _CreateFarmerAccountPageState extends State<CreateFarmerAccountPage> {
                   labelText: "Mobile Number",
                   prefixIcon: Icon(Icons.phone),
                 ),
-                validator: (value) =>
-                    value!.length != 10 ? "Enter valid mobile number" : null,
+                validator: (v) =>
+                    v!.length != 10 ? "Enter valid mobile number" : null,
               ),
 
               const SizedBox(height: 15),
 
-              // PASSWORD
               TextFormField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
@@ -107,29 +159,26 @@ class _CreateFarmerAccountPageState extends State<CreateFarmerAccountPage> {
                           ? Icons.visibility_off
                           : Icons.visibility,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
-                validator: (value) =>
-                    value!.length < 6 ? "Minimum 6 characters" : null,
+                validator: (v) => v!.length < 8 ? "Minimum 6 characters" : null,
               ),
 
               const SizedBox(height: 25),
 
-              // CREATE BUTTON
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _createAccount,
+                  onPressed: _loading ? null : _createAccount,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                   ),
-                  child: const Text("Create Account"),
+                  child: _loading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text("Create Account"),
                 ),
               ),
             ],

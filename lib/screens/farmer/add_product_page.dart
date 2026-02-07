@@ -1,7 +1,14 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddProductPage extends StatefulWidget {
-  const AddProductPage({super.key});
+  final String? productId;
+  final Map<String, dynamic>? productData;
+
+  const AddProductPage({super.key, this.productId, this.productData});
 
   @override
   State<AddProductPage> createState() => _AddProductPageState();
@@ -13,14 +20,15 @@ class _AddProductPageState extends State<AddProductPage> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   final _quantityController = TextEditingController();
+  final _addedStockController = TextEditingController();
   final _descriptionController = TextEditingController();
 
   String _category = "Vegetables";
   String _unit = "kg";
   bool _inStock = true;
+  bool _loading = false;
 
-  // 🖼 MOCK IMAGE STATE (Frontend only)
-  bool _imageSelected = false;
+  int _currentStock = 0; // ✅ ONLY FOR EDIT MODE
 
   final List<String> _categories = [
     "Vegetables",
@@ -32,34 +40,97 @@ class _AddProductPageState extends State<AddProductPage> {
 
   final List<String> _units = ["kg", "litre", "piece"];
 
-  void _pickImage() {
-    setState(() {
-      _imageSelected = true;
-    });
+  @override
+  void initState() {
+    super.initState();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Image selected (UI demo only)")),
-    );
+    // ✅ EDIT MODE PREFILL
+    if (widget.productData != null) {
+      final d = widget.productData!;
+      _nameController.text = d['name'];
+      _priceController.text = d['price'].toString();
+      _quantityController.text = d['quantity'].toString();
+      _descriptionController.text = d['description'] ?? "";
+      _category = d['category'];
+      _unit = d['unit'];
+      _inStock = d['inStock'];
+      _currentStock = d['currentStock'];
+    }
   }
 
-  void _saveProduct() {
-    if (_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Product added successfully (Frontend demo)"),
-        ),
-      );
+  Future<void> _saveProduct() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      Navigator.pop(context); // go back to product list
+    setState(() => _loading = true);
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _show("User not logged in");
+        return;
+      }
+
+      final addedStock = _addedStockController.text.isEmpty
+          ? 0
+          : int.parse(_addedStockController.text.trim());
+
+      // ✅ ADD PRODUCT
+      if (widget.productId == null) {
+        await FirebaseFirestore.instance.collection('products').add({
+          'name': _nameController.text.trim(),
+          'category': _category,
+          'price': double.parse(_priceController.text.trim()),
+          'quantity': double.parse(_quantityController.text.trim()),
+          'unit': _unit,
+          'added_stock': addedStock,
+          'currentStock': addedStock,
+          'description': _descriptionController.text.trim(),
+          'inStock': addedStock > 0,
+          'addedBy': user.email,
+          'farmerId': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      // ✅ EDIT PRODUCT
+      else {
+        await FirebaseFirestore.instance
+            .collection('products')
+            .doc(widget.productId)
+            .update({
+              'name': _nameController.text.trim(),
+              'category': _category,
+              'price': double.parse(_priceController.text.trim()),
+              'quantity': double.parse(_quantityController.text.trim()),
+              'unit': _unit,
+              'currentStock': _currentStock + addedStock,
+              'added_stock': FieldValue.increment(addedStock),
+              'description': _descriptionController.text.trim(),
+              'inStock': (_currentStock + addedStock) > 0,
+            });
+      }
+
+      Navigator.pop(context);
+    } catch (_) {
+      _show("Failed to save product. Please try again.");
+    } finally {
+      setState(() => _loading = false);
     }
+  }
+
+  void _show(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEdit = widget.productId != null;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F8E9),
       appBar: AppBar(
-        title: const Text("Add Product"),
+        title: Text(isEdit ? "Edit Product" : "Add Product"),
         backgroundColor: Colors.green,
         centerTitle: true,
       ),
@@ -69,32 +140,20 @@ class _AddProductPageState extends State<AddProductPage> {
           key: _formKey,
           child: Column(
             children: [
-              // 🖼 IMAGE PREVIEW
-              GestureDetector(
-                onTap: _pickImage,
-                child: Container(
-                  height: 160,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade100,
-                    borderRadius: BorderRadius.circular(15),
+              // ✅ ONLY NEW UI LINE (EDIT MODE)
+              if (isEdit)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    "Current Stock: $_currentStock",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
                   ),
-                  child: _imageSelected
-                      ? const Icon(
-                          Icons.check_circle,
-                          size: 80,
-                          color: Colors.green,
-                        )
-                      : const Icon(Icons.image, size: 80, color: Colors.green),
                 ),
-              ),
 
-              const SizedBox(height: 8),
-              const Text("Tap to upload product image"),
-
-              const SizedBox(height: 20),
-
-              // PRODUCT NAME
+              // 🔽 EVERYTHING BELOW IS YOUR SAME UI 🔽
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -107,9 +166,8 @@ class _AddProductPageState extends State<AddProductPage> {
 
               const SizedBox(height: 15),
 
-              // CATEGORY
               DropdownButtonFormField<String>(
-                initialValue: _category,
+                value: _category,
                 items: _categories
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
@@ -123,7 +181,6 @@ class _AddProductPageState extends State<AddProductPage> {
 
               const SizedBox(height: 15),
 
-              // PRICE
               TextFormField(
                 controller: _priceController,
                 keyboardType: TextInputType.number,
@@ -132,12 +189,13 @@ class _AddProductPageState extends State<AddProductPage> {
                   prefixIcon: Icon(Icons.currency_rupee),
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) => v!.isEmpty ? "Enter price" : null,
+                validator: (v) => v!.isEmpty || double.tryParse(v) == null
+                    ? "Enter valid price"
+                    : null,
               ),
 
               const SizedBox(height: 15),
 
-              // QUANTITY + UNIT
               Row(
                 children: [
                   Expanded(
@@ -149,13 +207,15 @@ class _AddProductPageState extends State<AddProductPage> {
                         prefixIcon: Icon(Icons.scale),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (v) => v!.isEmpty ? "Enter quantity" : null,
+                      validator: (v) => v!.isEmpty || double.tryParse(v) == null
+                          ? "Enter valid quantity"
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      initialValue: _unit,
+                      value: _unit,
                       items: _units
                           .map(
                             (u) => DropdownMenuItem(value: u, child: Text(u)),
@@ -173,7 +233,36 @@ class _AddProductPageState extends State<AddProductPage> {
 
               const SizedBox(height: 15),
 
-              // DESCRIPTION
+              // ✅ SAME FIELD – NOW USED FOR INCREMENT
+              TextFormField(
+                controller: _addedStockController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: "Added Stock",
+                  prefixIcon: Icon(Icons.inventory),
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => v!.isNotEmpty && int.tryParse(v) == null
+                    ? "Enter valid stock quantity"
+                    : null,
+              ),
+              if (widget.productId != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Current Stock: $_currentStock",
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 15),
+
               TextFormField(
                 controller: _descriptionController,
                 maxLines: 3,
@@ -186,7 +275,6 @@ class _AddProductPageState extends State<AddProductPage> {
 
               const SizedBox(height: 10),
 
-              // STOCK STATUS
               SwitchListTile(
                 title: const Text("In Stock"),
                 value: _inStock,
@@ -195,20 +283,21 @@ class _AddProductPageState extends State<AddProductPage> {
 
               const SizedBox(height: 25),
 
-              // SAVE BUTTON
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.save),
-                  label: const Text("Add Product"),
+                  label: _loading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(isEdit ? "Update Product" : "Add Product"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: _saveProduct,
+                  onPressed: _loading ? null : _saveProduct,
                 ),
               ),
             ],

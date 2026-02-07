@@ -1,4 +1,9 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'farmer_dashboard_page.dart';
 import 'forgot_password_page.dart';
 import 'create_farmer_account_page.dart';
@@ -13,43 +18,106 @@ class FarmerLoginPage extends StatefulWidget {
 class _FarmerLoginPageState extends State<FarmerLoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
 
   bool _obscurePassword = true;
+  bool _loading = false;
 
-  // ✅ EMAIL VALIDATION
   bool _isValidEmail(String email) {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
   }
 
-  // ✅ PASSWORD VALIDATION
-  bool _isValidPassword(String password) {
-    return password.length >= 8;
-  }
-
-  // ✅ LOGIN FUNCTION
-  void _login() {
+  Future<void> _login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     if (!_isValidEmail(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Enter a valid email address")),
-      );
+      _show("Please enter a valid email address");
       return;
     }
 
-    if (!_isValidPassword(password)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Password must be at least 8 characters")),
-      );
+    if (password.length < 8) {
+      _show("Password must be at least 8 characters");
       return;
     }
 
-    // ✅ SUCCESS → FARMER DASHBOARD
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const FarmerDashboardPage()),
+    setState(() => _loading = true);
+
+    try {
+      // 🔐 Firebase Auth
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final uid = cred.user!.uid;
+
+      // 📄 Farmer document
+      final doc = await FirebaseFirestore.instance
+          .collection('farmers')
+          .doc(uid)
+          .get();
+
+      if (!doc.exists) {
+        await FirebaseAuth.instance.signOut();
+        _show("Farmer account not found");
+        return;
+      }
+
+      final data = doc.data()!;
+
+      // 🚫 Blocked
+      if (data['isBlocked'] == true) {
+        await FirebaseAuth.instance.signOut();
+        _show("Your account has been blocked. Please contact support.");
+        return;
+      }
+
+      // ⏳ Not approved
+      if (data['isApproved'] != true) {
+        await FirebaseAuth.instance.signOut();
+        _show("Your account is awaiting admin approval");
+        return;
+      }
+
+      // ✅ Success
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const FarmerDashboardPage()),
+      );
+    } on FirebaseAuthException catch (e) {
+      _handleAuthError(e.code);
+    } catch (_) {
+      _show("Login failed. Please try again later.");
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  void _handleAuthError(String code) {
+    String message;
+
+    switch (code) {
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        message = "Invalid email or password";
+        break;
+      case 'user-disabled':
+        message = "This account has been disabled";
+        break;
+      case 'too-many-requests':
+        message = "Too many attempts. Please try again later";
+        break;
+      default:
+        message = "Login failed. Please try again";
+    }
+
+    _show(message);
+  }
+
+  void _show(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -78,122 +146,110 @@ class _FarmerLoginPageState extends State<FarmerLoginPage> {
                 ),
               ],
             ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.agriculture, size: 60, color: Colors.green),
-                  const SizedBox(height: 15),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.agriculture, size: 60, color: Colors.green),
+                const SizedBox(height: 15),
 
-                  const Text(
-                    "Farmer Login",
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
+                const Text(
+                  "Farmer Login",
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
 
-                  const SizedBox(height: 25),
+                const SizedBox(height: 25),
 
-                  // EMAIL
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: "Email",
-                      prefixIcon: const Icon(Icons.email),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: "Email",
+                    prefixIcon: const Icon(Icons.email),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                ),
 
-                  const SizedBox(height: 15),
+                const SizedBox(height: 15),
 
-                  // PASSWORD
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    decoration: InputDecoration(
-                      labelText: "Password",
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
+                TextField(
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    labelText: "Password",
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
+                ),
 
-                  const SizedBox(height: 10),
+                const SizedBox(height: 10),
 
-                  // FORGOT PASSWORD → PAGE
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ForgotPasswordPage(),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        "Forgot Password?",
-                        style: TextStyle(color: Colors.green),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  // LOGIN BUTTON
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      child: const Text(
-                        "Login",
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  // REGISTER → PAGE
-                  TextButton(
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const CreateFarmerAccountPage(),
+                          builder: (_) => const ForgotPasswordPage(),
                         ),
                       );
                     },
                     child: const Text(
-                      "Don't have an account? Create Farmer Account",
+                      "Forgot Password?",
                       style: TextStyle(color: Colors.green),
                     ),
                   ),
-                ],
-              ),
+                ),
+
+                const SizedBox(height: 15),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _loading ? null : _login,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                    ),
+                    child: _loading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text("Login", style: TextStyle(fontSize: 16)),
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CreateFarmerAccountPage(),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    "Don't have an account? Create Farmer Account",
+                    style: TextStyle(color: Colors.green),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

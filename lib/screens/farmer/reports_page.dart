@@ -1,12 +1,16 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ReportsPage extends StatelessWidget {
   const ReportsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final farmerEmail = FirebaseAuth.instance.currentUser!.email!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
@@ -14,110 +18,156 @@ class ReportsPage extends StatelessWidget {
         backgroundColor: Colors.indigo,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 📊 SUMMARY CARDS
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 15,
-              mainAxisSpacing: 15,
-              children: const [
-                _ReportCard(
-                  title: "Total Sales",
-                  value: "₹1,25,000",
-                  icon: Icons.currency_rupee,
-                  color: Colors.green,
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('orders').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final docs = snapshot.data!.docs;
+
+          double farmerSales = 0;
+          int farmerOrdersCount = 0;
+
+          final List<QueryDocumentSnapshot> farmerOrders = [];
+
+          for (var doc in docs) {
+            final products = doc['products'] as List;
+
+            final farmerProducts = products
+                .where((p) => p['addedBy'] == farmerEmail)
+                .toList();
+
+            if (farmerProducts.isNotEmpty) {
+              farmerOrders.add(doc);
+              farmerOrdersCount++;
+
+              for (var p in farmerProducts) {
+                farmerSales += (p['total'] ?? 0).toDouble();
+              }
+            }
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 📊 SUMMARY
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 15,
+                  mainAxisSpacing: 15,
+                  children: [
+                    _ReportCard(
+                      title: "Total Sales",
+                      value: "₹${farmerSales.toStringAsFixed(0)}",
+                      icon: Icons.currency_rupee,
+                      color: Colors.green,
+                    ),
+                    _ReportCard(
+                      title: "Total Orders",
+                      value: farmerOrdersCount.toString(),
+                      icon: Icons.receipt_long,
+                      color: Colors.blue,
+                    ),
+                  ],
                 ),
-                _ReportCard(
-                  title: "Total Orders",
-                  value: "980",
-                  icon: Icons.receipt_long,
-                  color: Colors.blue,
+
+                const SizedBox(height: 25),
+
+                const Text(
+                  "Analytics",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                _ReportCard(
-                  title: "Active Users",
-                  value: "1,250",
-                  icon: Icons.people,
-                  color: Colors.orange,
+                const SizedBox(height: 10),
+
+                _reportTile(
+                  context,
+                  icon: Icons.show_chart,
+                  title: "Sales Overview",
+                  subtitle: "Your revenue summary",
+                  onTap: () =>
+                      _salesOverview(context, farmerSales, farmerOrdersCount),
                 ),
-                _ReportCard(
-                  title: "Farmers",
-                  value: "320",
-                  icon: Icons.agriculture,
-                  color: Colors.teal,
+                _reportTile(
+                  context,
+                  icon: Icons.trending_up,
+                  title: "Order Trends",
+                  subtitle: "Delivered vs Pending",
+                  onTap: () => _orderTrends(context, farmerOrders),
+                ),
+                _reportTile(
+                  context,
+                  icon: Icons.inventory,
+                  title: "Product Performance",
+                  subtitle: "Your top products",
+                  onTap: () =>
+                      _productPerformance(context, farmerOrders, farmerEmail),
                 ),
               ],
             ),
-
-            const SizedBox(height: 25),
-
-            // 🗓 FILTER
-            const Text(
-              "Report Period",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-
-            Wrap(
-              spacing: 10,
-              children: const [
-                _FilterChip("Today"),
-                _FilterChip("This Week"),
-                _FilterChip("This Month"),
-                _FilterChip("This Year"),
-              ],
-            ),
-
-            const SizedBox(height: 25),
-
-            // 📈 REPORT LIST
-            const Text(
-              "Detailed Reports",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-
-            _reportTile(
-              context,
-              icon: Icons.show_chart,
-              title: "Sales Overview",
-              subtitle: "Daily and monthly sales summary",
-            ),
-            _reportTile(
-              context,
-              icon: Icons.trending_up,
-              title: "Order Trends",
-              subtitle: "Order growth analysis",
-            ),
-            _reportTile(
-              context,
-              icon: Icons.person_add,
-              title: "User Registrations",
-              subtitle: "New users & farmers",
-            ),
-            _reportTile(
-              context,
-              icon: Icons.inventory,
-              title: "Product Performance",
-              subtitle: "Top selling products",
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  // 📄 REPORT TILE
+  // ---------------- MODALS ----------------
+
+  void _salesOverview(BuildContext context, double sales, int orders) {
+    _openModal(context, "Sales Overview", [
+      _modalRow("Total Orders", orders.toString()),
+      _modalRow("Total Revenue", "₹${sales.toStringAsFixed(0)}"),
+    ]);
+  }
+
+  void _orderTrends(BuildContext context, List<QueryDocumentSnapshot> orders) {
+    final delivered = orders.where((o) => o['status'] == 'delivered').length;
+    final pending = orders.length - delivered;
+
+    _openModal(context, "Order Trends", [
+      _modalRow("Delivered Orders", delivered.toString()),
+      _modalRow("Pending Orders", pending.toString()),
+    ]);
+  }
+
+  void _productPerformance(
+    BuildContext context,
+    List<QueryDocumentSnapshot> orders,
+    String farmerEmail,
+  ) {
+    final Map<String, int> productCount = {};
+
+    for (var o in orders) {
+      for (var p in o['products']) {
+        if (p['addedBy'] == farmerEmail) {
+          productCount[p['productName']] =
+              (productCount[p['productName']] ?? 0) + (p['qty'] as int);
+        }
+      }
+    }
+
+    _openModal(
+      context,
+      "Product Performance",
+      productCount.entries
+          .map((e) => _modalRow(e.key, "${e.value} sold"))
+          .toList(),
+    );
+  }
+
+  // ---------------- UI HELPERS ----------------
+
   Widget _reportTile(
     BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
+    required VoidCallback onTap,
   }) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -130,17 +180,48 @@ class ReportsPage extends StatelessWidget {
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("$title clicked (Demo)")));
-        },
+        onTap: onTap,
+      ),
+    );
+  }
+
+  void _openModal(BuildContext context, String title, List<Widget> children) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 15),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modalRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [Text(label), Text(value)],
       ),
     );
   }
 }
 
-// 📊 SUMMARY CARD
+// ---------------- SUMMARY CARD ----------------
+
 class _ReportCard extends StatelessWidget {
   final String title;
   final String value;
@@ -178,22 +259,6 @@ class _ReportCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// 🏷 FILTER CHIP
-class _FilterChip extends StatelessWidget {
-  final String label;
-
-  const _FilterChip(this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label),
-      backgroundColor: Colors.indigo.withOpacity(0.15),
-      labelStyle: const TextStyle(color: Colors.indigo),
     );
   }
 }

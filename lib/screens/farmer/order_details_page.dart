@@ -1,10 +1,22 @@
+// ignore_for_file: unnecessary_to_list_in_spreads, use_build_context_synchronously
+
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OrderDetailsPage extends StatelessWidget {
-  const OrderDetailsPage({super.key});
+  final String orderId;
+  final Map<String, dynamic> orderData;
+
+  const OrderDetailsPage({
+    super.key,
+    required this.orderId,
+    required this.orderData,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final status = orderData['status'];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3E5F5),
       appBar: AppBar(
@@ -20,11 +32,10 @@ class OrderDetailsPage extends StatelessWidget {
             _sectionCard(
               title: "Order Summary",
               child: Column(
-                children: const [
-                  _InfoRow("Order ID", "#ORD101"),
-                  _InfoRow("Order Date", "18 Aug 2026"),
-                  _InfoRow("Status", "Pending"),
-                  _InfoRow("Payment", "Cash on Delivery"),
+                children: [
+                  _InfoRow("Order ID", orderId),
+                  _InfoRow("Status", status),
+                  _InfoRow("Payment", orderData['paymentMethod']),
                 ],
               ),
             ),
@@ -35,25 +46,7 @@ class OrderDetailsPage extends StatelessWidget {
             _sectionCard(
               title: "Customer Details",
               child: Column(
-                children: const [
-                  _InfoRow("Name", "Ravi Kumar"),
-                  _InfoRow("Email", "ravi@gmail.com"),
-                  _InfoRow("Phone", "+91 98765 43210"),
-                  _InfoRow("Address", "Chennai, Tamil Nadu"),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // 👨‍🌾 FARMER DETAILS
-            _sectionCard(
-              title: "Farmer Details",
-              child: Column(
-                children: const [
-                  _InfoRow("Name", "Ramesh Kumar"),
-                  _InfoRow("Location", "Coimbatore"),
-                ],
+                children: [_InfoRow("Email", orderData['orderBy'])],
               ),
             ),
 
@@ -63,11 +56,16 @@ class OrderDetailsPage extends StatelessWidget {
             _sectionCard(
               title: "Products",
               child: Column(
-                children: const [
-                  _ProductRow("Tomatoes", "2 kg", "₹80"),
-                  _ProductRow("Onions", "1 kg", "₹40"),
-                  Divider(),
-                  _InfoRow("Total Amount", "₹120"),
+                children: [
+                  ...(orderData['products'] as List).map((p) {
+                    return _ProductRow(
+                      p['productName'],
+                      "${p['qty']}",
+                      "₹${p['total']}",
+                    );
+                  }).toList(),
+                  const Divider(),
+                  _InfoRow("Total Amount", "₹${orderData['grandTotal']}"),
                 ],
               ),
             ),
@@ -79,9 +77,9 @@ class OrderDetailsPage extends StatelessWidget {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
-                      _showSnack(context, "Order Approved (Demo)");
-                    },
+                    onPressed: status == "delivered"
+                        ? null
+                        : () => _updateStatus(context, "approved"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       shape: RoundedRectangleBorder(
@@ -94,9 +92,9 @@ class OrderDetailsPage extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
-                      _showSnack(context, "Order Rejected (Demo)");
-                    },
+                    onPressed: status == "delivered"
+                        ? null
+                        : () => _updateStatus(context, "cancelled"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                       shape: RoundedRectangleBorder(
@@ -115,9 +113,9 @@ class OrderDetailsPage extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  _showSnack(context, "Order Delivered (Demo)");
-                },
+                onPressed: status == "delivered"
+                    ? null
+                    : () => _updateStatus(context, "delivered"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
                   shape: RoundedRectangleBorder(
@@ -127,30 +125,13 @@ class OrderDetailsPage extends StatelessWidget {
                 child: const Text("Mark as Delivered"),
               ),
             ),
-
-            const SizedBox(height: 10),
-
-            // ❌ CANCEL ORDER
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _confirmCancel(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text("Cancel Order"),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
 
-  // 🔲 SECTION CARD
+  // 🔲 SECTION CARD (UNCHANGED UI)
   Widget _sectionCard({required String title, required Widget child}) {
     return Card(
       elevation: 4,
@@ -172,39 +153,34 @@ class OrderDetailsPage extends StatelessWidget {
     );
   }
 
-  // 🔔 SNACKBAR
-  void _showSnack(BuildContext context, String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
+  // 🔥 UPDATE STATUS + ADD NOTIFICATION
+  Future<void> _updateStatus(BuildContext context, String newStatus) async {
+    final orderRef = FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId);
 
-  // ❗ CANCEL CONFIRMATION
-  void _confirmCancel(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Cancel Order"),
-        content: const Text("Are you sure you want to cancel this order?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("No"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text("Yes, Cancel"),
-          ),
-        ],
-      ),
-    );
+    final notificationRef = FirebaseFirestore.instance
+        .collection('notifications')
+        .doc();
+
+    await FirebaseFirestore.instance.runTransaction((tx) async {
+      tx.update(orderRef, {'status': newStatus});
+
+      tx.set(notificationRef, {
+        'userEmail': orderData['orderBy'],
+        'orderId': orderId,
+        'title': "Order Status Updated",
+        'message': "Your order status changed to $newStatus",
+        'createdAt': FieldValue.serverTimestamp(),
+        'seen': false,
+      });
+    });
+
+    Navigator.pop(context);
   }
 }
 
-// 🔹 INFO ROW WIDGET
+// 🔹 INFO ROW (FIXED – SAME FILE)
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
@@ -230,7 +206,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// 🔹 PRODUCT ROW WIDGET
+// 🔹 PRODUCT ROW (UNCHANGED UI)
 class _ProductRow extends StatelessWidget {
   final String name;
   final String qty;

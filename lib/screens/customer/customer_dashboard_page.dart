@@ -5,11 +5,10 @@ import 'package:flutter/material.dart';
 import 'browse_products_page.dart';
 import 'cart_page.dart';
 import 'my_orders_page.dart';
+import 'tickets_list_page.dart';
 import 'wishlist_page.dart';
 import 'customer_profile_page.dart';
 import 'delivery_address_page.dart';
-import 'settings_page.dart';
-import 'support_page.dart';
 import 'notifications_page.dart';
 
 class CustomerDashboardPage extends StatelessWidget {
@@ -146,17 +145,10 @@ class CustomerDashboardPage extends StatelessWidget {
               ),
               _dashboardCard(
                 context,
-                icon: Icons.settings,
-                title: "Settings",
-                color: Colors.brown,
-                page: SettingsPage(),
-              ),
-              _dashboardCard(
-                context,
                 icon: Icons.support_agent,
-                title: "Support",
-                color: Colors.teal,
-                page: SupportPage(),
+                title: "My Tickets",
+                color: Colors.indigo,
+                page: TicketsListPage(),
               ),
             ],
           ),

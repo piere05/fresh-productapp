@@ -1,6 +1,9 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'add_address_page.dart';
 
 class DeliveryAddressPage extends StatelessWidget {
@@ -8,6 +11,12 @@ class DeliveryAddressPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return const Scaffold(body: Center(child: Text("Please login")));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
@@ -15,56 +24,111 @@ class DeliveryAddressPage extends StatelessWidget {
         backgroundColor: Colors.indigo,
         centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // 📍 SAVED ADDRESSES
-            _addressCard(
-              title: "Home",
-              address: "12, Anna Nagar, Chennai, Tamil Nadu - 600040",
-              isDefault: true,
-            ),
-            _addressCard(
-              title: "Office",
-              address: "IT Park Road, Tidel Park, Chennai - 600113",
-              isDefault: false,
-            ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('customers')
+            .doc(user.uid)
+            .collection('addresses')
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            const Spacer(),
+          final docs = snapshot.data!.docs;
 
-            // ➕ ADD ADDRESS BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.add_location_alt),
-                label: const Text("Add New Address"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // 📍 SAVED ADDRESSES
+                Expanded(
+                  child: docs.isEmpty
+                      ? const Center(child: Text("No address found"))
+                      : ListView.builder(
+                          itemCount: docs.length,
+                          itemBuilder: (context, index) {
+                            final doc = docs[index];
+                            final data = doc.data() as Map<String, dynamic>;
+
+                            return _addressCard(
+                              context: context,
+                              title: data['name'],
+                              address:
+                                  "${data['address']}, ${data['city']} - ${data['pincode']}\n📞 ${data['phone']}",
+                              isDefault: data['isDefault'] == true,
+                              onEdit: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AddAddressPage(
+                                      addressId: doc.id,
+                                      addressData: data,
+                                    ),
+                                  ),
+                                );
+                              },
+                              onDelete: () async {
+                                await FirebaseFirestore.instance
+                                    .collection('customers')
+                                    .doc(user.uid)
+                                    .collection('addresses')
+                                    .doc(doc.id)
+                                    .delete();
+                              },
+                            );
+                          },
+                        ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // ➕ ADD ADDRESS BUTTON
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(
+                      Icons.add_location_alt,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      "Add New Address",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AddAddressPage(),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => AddAddressPage()),
-                  );
-                },
-              ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  // 📦 ADDRESS CARD
+  // 📦 ADDRESS CARD (SAME UI)
   Widget _addressCard({
+    required BuildContext context,
     required String title,
     required String address,
     required bool isDefault,
+    required VoidCallback onEdit,
+    required VoidCallback onDelete,
   }) {
     return Card(
       elevation: 4,
@@ -96,13 +160,18 @@ class DeliveryAddressPage extends StatelessWidget {
         ),
         subtitle: Text(address),
         trailing: PopupMenuButton<String>(
-          onSelected: (value) {},
+          onSelected: (value) {
+            if (value == "edit") {
+              onEdit();
+            } else if (value == "delete") {
+              onDelete();
+            }
+          },
           itemBuilder: (_) => const [
             PopupMenuItem(value: "edit", child: Text("Edit")),
             PopupMenuItem(value: "delete", child: Text("Delete")),
           ],
         ),
-        onTap: () {},
       ),
     );
   }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'order_details_page.dart';
 
 class OrdersPage extends StatelessWidget {
@@ -6,6 +8,8 @@ class OrdersPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final farmerEmail = FirebaseAuth.instance.currentUser!.email;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3E5F5),
       appBar: AppBar(
@@ -15,7 +19,6 @@ class OrdersPage extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // 🔍 SEARCH BAR
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
@@ -32,32 +35,40 @@ class OrdersPage extends StatelessWidget {
             ),
           ),
 
-          // 📋 ORDER LIST
           Expanded(
-            child: ListView(
-              children: [
-                _orderTile(
-                  context,
-                  orderId: "#ORD101",
-                  customer: "Ravi Kumar",
-                  amount: "₹1,200",
-                  status: "Pending",
-                ),
-                _orderTile(
-                  context,
-                  orderId: "#ORD102",
-                  customer: "Suresh",
-                  amount: "₹850",
-                  status: "Approved",
-                ),
-                _orderTile(
-                  context,
-                  orderId: "#ORD103",
-                  customer: "Anitha",
-                  amount: "₹640",
-                  status: "Delivered",
-                ),
-              ],
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('orders')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final orders = snapshot.data!.docs.where((doc) {
+                  final products = (doc['products'] as List);
+                  return products.any((p) => p['addedBy'] == farmerEmail);
+                }).toList();
+
+                if (orders.isEmpty) {
+                  return const Center(child: Text("No Orders Found"));
+                }
+
+                return ListView(
+                  children: orders.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+
+                    return _orderTile(
+                      context,
+                      orderId: doc.id,
+                      customer: data['orderBy'],
+                      amount: "₹${data['grandTotal']}",
+                      status: data['status'],
+                      orderData: data,
+                    );
+                  }).toList(),
+                );
+              },
             ),
           ),
         ],
@@ -65,20 +76,20 @@ class OrdersPage extends StatelessWidget {
     );
   }
 
-  // 🧾 ORDER TILE
   Widget _orderTile(
     BuildContext context, {
     required String orderId,
     required String customer,
     required String amount,
     required String status,
+    required Map<String, dynamic> orderData,
   }) {
     Color statusColor;
     switch (status) {
-      case "Approved":
+      case "approved":
         statusColor = Colors.green;
         break;
-      case "Delivered":
+      case "delivered":
         statusColor = Colors.blue;
         break;
       default:
@@ -112,7 +123,10 @@ class OrdersPage extends StatelessWidget {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => OrderDetailsPage()),
+            MaterialPageRoute(
+              builder: (_) =>
+                  OrderDetailsPage(orderId: orderId, orderData: orderData),
+            ),
           );
         },
       ),

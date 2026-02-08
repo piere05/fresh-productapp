@@ -1,9 +1,18 @@
-// ignore_for_file: prefer_const_constructors_in_immutables
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+import 'create_ticket_page.dart';
 
 class OrderDetailsPage extends StatelessWidget {
-  OrderDetailsPage({super.key});
+  final String orderId;
+
+  const OrderDetailsPage({super.key, required this.orderId});
 
   @override
   Widget build(BuildContext context) {
@@ -14,122 +23,226 @@ class OrderDetailsPage extends StatelessWidget {
         backgroundColor: Colors.blue,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // 📦 ORDER STATUS
-            _sectionCard(
-              title: "Order Status",
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderId)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final products = List<Map<String, dynamic>>.from(data['products']);
+          final address = Map<String, dynamic>.from(data['deliveryAddress']);
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _card(
+                  "Order Status",
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        data['status'].toString().toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Chip(
+                        label: Text(data['paymentMethod']),
+                        backgroundColor: Colors.green.shade100,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                _card(
+                  "Order Info",
+                  Column(
+                    children: [
+                      _info("Order ID", orderId),
+                      _info(
+                        "Date",
+                        (data['createdAt'] as Timestamp)
+                            .toDate()
+                            .toString()
+                            .split(' ')
+                            .first,
+                      ),
+                      _info("Payment", data['paymentMethod']),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                _card(
+                  "Products",
+                  Column(
+                    children: [
+                      ...products.map(
+                        (p) => _row(
+                          "${p['productName']} (x${p['qty']})",
+                          "Rs. ${p['total']}",
+                        ),
+                      ),
+                      const Divider(),
+                      _info("Items Total", "Rs. ${data['itemsTotal']}"),
+                      _info("Delivery Fee", "Rs. ${data['deliveryFee']}"),
+                      _info(
+                        "Grand Total",
+                        "Rs. ${data['grandTotal']}",
+                        bold: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                _card(
+                  "Delivery Address",
                   Text(
-                    "Delivered",
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                    "${address['name']}\n"
+                    "${address['address']}\n"
+                    "${address['city']} - ${address['pincode']}\n"
+                    "Phone: ${address['phone']}",
+                  ),
+                ),
+                const SizedBox(height: 25),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf),
+                    label: const Text("Download Invoice"),
+                    onPressed: () {
+                      if (kIsWeb) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              "Invoice download is available on mobile app only",
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      _downloadInvoice(data);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.support_agent),
+                    label: const Text("Request Support"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
                     ),
-                  ),
-                  Chip(
-                    label: Text("Paid"),
-                    backgroundColor: Color(0xFFDFF5E3),
-                    labelStyle: TextStyle(color: Colors.green),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // 🧾 ORDER INFO
-            _sectionCard(
-              title: "Order Information",
-              child: Column(
-                children: const [
-                  _InfoRow("Order ID", "#ORD101"),
-                  _InfoRow("Order Date", "15 Aug 2026"),
-                  _InfoRow("Payment", "UPI"),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // 🛒 PRODUCT DETAILS
-            _sectionCard(
-              title: "Products",
-              child: Column(
-                children: const [
-                  _ProductRow("Tomatoes", "2 kg", "₹80"),
-                  _ProductRow("Onions", "1 kg", "₹40"),
-                  Divider(),
-                  _InfoRow("Total Amount", "₹120"),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // 🚚 DELIVERY ADDRESS
-            _sectionCard(
-              title: "Delivery Address",
-              child: const Text(
-                "Ravi Kumar\nChennai, Tamil Nadu\n+91 98765 43210",
-                style: TextStyle(height: 1.5),
-              ),
-            ),
-
-            const SizedBox(height: 25),
-
-            // 🔄 ACTION BUTTONS
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.receipt),
-                label: const Text("Download Invoice"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CreateTicketPage(orderId: orderId),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                onPressed: () {
-                  _showSnack(context, "Invoice download (Demo)");
-                },
-              ),
+              ],
             ),
-
-            const SizedBox(height: 10),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.support_agent),
-                label: const Text("Need Help"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () {
-                  _showSnack(context, "Support page (Demo)");
-                },
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  // 📌 SECTION CARD
-  Widget _sectionCard({required String title, required Widget child}) {
+  // ================= PDF (SAFE – NO WEB CRASH) =================
+  Future<void> _downloadInvoice(Map<String, dynamic> order) async {
+    final pdf = pw.Document();
+    final products = List<Map<String, dynamic>>.from(order['products']);
+    final address = Map<String, dynamic>.from(order['deliveryAddress']);
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(20),
+        build: (_) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                "Fresh Product App",
+                style: pw.TextStyle(
+                  fontSize: 18,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.Text(
+                "Invoice Date: ${DateTime.now().toString().split(' ').first}",
+              ),
+              pw.SizedBox(height: 20),
+
+              pw.Table.fromTextArray(
+                headers: ["S.No", "Product", "Qty", "Price", "Total"],
+                data: products.map((p) {
+                  return [
+                    p['sno'].toString(),
+                    p['productName'],
+                    p['qty'].toString(),
+                    "Rs. ${p['price']}",
+                    "Rs. ${p['total']}",
+                  ];
+                }).toList(),
+              ),
+
+              pw.SizedBox(height: 20),
+
+              pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text("Items Total: Rs. ${order['itemsTotal']}"),
+                    pw.Text("Delivery Fee: Rs. ${order['deliveryFee']}"),
+                    pw.Text(
+                      "Grand Total: Rs. ${order['grandTotal']}",
+                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+
+              pw.SizedBox(height: 30),
+              pw.Text(
+                "Delivery Address",
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              ),
+              pw.Text(address['name']),
+              pw.Text(address['address']),
+              pw.Text("${address['city']} - ${address['pincode']}"),
+              pw.Text("Phone: ${address['phone']}"),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (_) async => pdf.save());
+  }
+
+  // ================= UI HELPERS =================
+  Widget _card(String title, Widget child) {
     return Card(
       elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -137,7 +250,7 @@ class OrderDetailsPage extends StatelessWidget {
           children: [
             Text(
               title,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 10),
             child,
@@ -147,55 +260,22 @@ class OrderDetailsPage extends StatelessWidget {
     );
   }
 
-  // 🔔 SNACKBAR
-  void _showSnack(BuildContext context, String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-}
-
-// 🧾 INFO ROW
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _InfoRow(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              "$label:",
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
+  Widget _info(String l, String v, {bool bold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(l, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(v, style: TextStyle(fontWeight: bold ? FontWeight.bold : null)),
+      ],
     );
   }
-}
 
-// 🛒 PRODUCT ROW
-class _ProductRow extends StatelessWidget {
-  final String name;
-  final String qty;
-  final String price;
-
-  const _ProductRow(this.name, this.qty, this.price);
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _row(String l, String r) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(name), Text(qty), Text(price)],
+        children: [Text(l), Text(r)],
       ),
     );
   }

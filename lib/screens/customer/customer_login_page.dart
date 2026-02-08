@@ -1,4 +1,10 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'create_customer_account_page.dart';
 import 'customer_dashboard_page.dart';
 
 class CustomerLoginPage extends StatefulWidget {
@@ -14,37 +20,32 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
   bool _obscurePassword = true;
 
-  // ✅ EMAIL VALIDATION
   bool _isValidEmail(String email) {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
   }
 
-  // ✅ PASSWORD VALIDATION
   bool _isValidPassword(String password) {
     return password.length >= 8;
   }
 
-  // ✅ FORGOT PASSWORD DIALOG
-  void _showForgotPasswordDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Forgot Password"),
-        content: const Text(
-          "Password reset link will be sent to your email.\n\n(Frontend demo only)",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
-          ),
-        ],
-      ),
+  void _showForgotPasswordDialog() async {
+    if (_emailController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Enter email first")));
+      return;
+    }
+
+    await FirebaseAuth.instance.sendPasswordResetEmail(
+      email: _emailController.text.trim(),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Password reset link sent to email")),
     );
   }
 
-  // ✅ LOGIN FUNCTION
-  void _login() {
+  Future<void> _login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -62,11 +63,44 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       return;
     }
 
-    // ✅ SUCCESS → CUSTOMER DASHBOARD
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const CustomerDashboardPage()),
-    );
+    try {
+      final auth = FirebaseAuth.instance;
+      final firestore = FirebaseFirestore.instance;
+
+      final cred = await auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final uid = cred.user!.uid;
+
+      final doc = await firestore.collection('customers').doc(uid).get();
+
+      if (!doc.exists) {
+        await auth.signOut();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Customer account not found")),
+        );
+        return;
+      }
+
+      if (doc['isBlocked'] == true) {
+        await auth.signOut();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Your account is blocked")),
+        );
+        return;
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const CustomerDashboardPage()),
+      );
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message ?? "Login failed")));
+    }
   }
 
   @override
@@ -107,7 +141,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
                 const SizedBox(height: 25),
 
-                // EMAIL
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -122,7 +155,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
                 const SizedBox(height: 15),
 
-                // PASSWORD
                 TextField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -149,7 +181,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
                 const SizedBox(height: 10),
 
-                // FORGOT PASSWORD
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -163,7 +194,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
                 const SizedBox(height: 15),
 
-                // LOGIN BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -181,9 +211,15 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
                 const SizedBox(height: 15),
 
-                // REGISTER
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CreateCustomerAccountPage(),
+                      ),
+                    );
+                  },
                   child: const Text(
                     "Don't have an account? Register",
                     style: TextStyle(color: Colors.blue),

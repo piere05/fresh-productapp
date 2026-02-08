@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'transaction_history_page.dart';
 
 class EarningsPage extends StatelessWidget {
@@ -6,6 +8,8 @@ class EarningsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final farmerEmail = FirebaseAuth.instance.currentUser!.email!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F8E9),
       appBar: AppBar(
@@ -13,102 +17,156 @@ class EarningsPage extends StatelessWidget {
         backgroundColor: Colors.green,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 💰 TOTAL EARNINGS CARD
-            Card(
-              elevation: 5,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: const [
-                    Text(
-                      "Total Earnings",
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .where('status', isEqualTo: 'delivered')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          double totalEarnings = 0;
+          double todayEarnings = 0;
+          double monthEarnings = 0;
+
+          final now = DateTime.now();
+          final List<Map<String, dynamic>> recentTransactions = [];
+
+          for (var doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final createdAt = (data['createdAt'] as Timestamp).toDate();
+            final products = data['products'] as List;
+
+            for (var p in products) {
+              if (p['addedBy'] == farmerEmail) {
+                final amount = (p['total'] ?? 0).toDouble();
+
+                totalEarnings += amount;
+
+                if (createdAt.day == now.day &&
+                    createdAt.month == now.month &&
+                    createdAt.year == now.year) {
+                  todayEarnings += amount;
+                }
+
+                if (createdAt.month == now.month &&
+                    createdAt.year == now.year) {
+                  monthEarnings += amount;
+                }
+
+                recentTransactions.add({'orderId': doc.id, 'amount': amount});
+              }
+            }
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 💰 TOTAL EARNINGS CARD
+                Card(
+                  elevation: 5,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      children: [
+                        const Text(
+                          "Total Earnings",
+                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          "₹${totalEarnings.toStringAsFixed(0)}",
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: 10),
-                    Text(
-                      "₹25,000",
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // 📊 EARNINGS SUMMARY
+                Row(
+                  children: [
+                    _SummaryCard(
+                      title: "Today",
+                      amount: "₹${todayEarnings.toStringAsFixed(0)}",
+                      color: Colors.blue,
+                    ),
+                    const SizedBox(width: 10),
+                    _SummaryCard(
+                      title: "This Month",
+                      amount: "₹${monthEarnings.toStringAsFixed(0)}",
+                      color: Colors.orange,
                     ),
                   ],
                 ),
-              ),
-            ),
 
-            const SizedBox(height: 20),
+                const SizedBox(height: 25),
 
-            // 📊 EARNINGS SUMMARY
-            Row(
-              children: const [
-                _SummaryCard(
-                  title: "Today",
-                  amount: "₹1,200",
-                  color: Colors.blue,
+                // 🧾 RECENT TRANSACTIONS
+                const Text(
+                  "Recent Transactions",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(width: 10),
-                _SummaryCard(
-                  title: "This Month",
-                  amount: "₹8,500",
-                  color: Colors.orange,
+
+                const SizedBox(height: 10),
+
+                ...recentTransactions
+                    .take(3)
+                    .map(
+                      (t) => _transactionTile(
+                        "Order ${t['orderId']}",
+                        "₹${t['amount']}",
+                        "Credited",
+                      ),
+                    ),
+
+                const SizedBox(height: 25),
+
+                // 🔍 VIEW ALL TRANSACTIONS
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.receipt_long),
+                    label: const Text("View Transaction History"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const TransactionHistoryPage(),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
-
-            const SizedBox(height: 25),
-
-            // 🧾 RECENT TRANSACTIONS
-            const Text(
-              "Recent Transactions",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 10),
-
-            _transactionTile("Order #101", "₹1,200", "Credited"),
-            _transactionTile("Order #102", "₹950", "Credited"),
-            _transactionTile("Order #103", "₹1,400", "Credited"),
-
-            const SizedBox(height: 25),
-
-            // 🔍 VIEW ALL TRANSACTIONS
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.receipt_long),
-                label: const Text("View Transaction History"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => TransactionHistoryPage()),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  // 🧾 TRANSACTION TILE
+  // 🧾 TRANSACTION TILE (UI UNCHANGED)
   Widget _transactionTile(String orderId, String amount, String status) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -132,7 +190,7 @@ class EarningsPage extends StatelessWidget {
   }
 }
 
-// 📊 SUMMARY CARD
+// 📊 SUMMARY CARD (FIXED – SAME FILE)
 class _SummaryCard extends StatelessWidget {
   final String title;
   final String amount;

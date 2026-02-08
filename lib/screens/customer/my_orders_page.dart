@@ -1,34 +1,16 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'customer_dashboard_page.dart';
 import 'order_details_page.dart';
 
 class MyOrdersPage extends StatelessWidget {
   MyOrdersPage({super.key});
 
-  final List<Map<String, String>> orders = [
-    {
-      "id": "#ORD101",
-      "date": "20 Aug 2026",
-      "amount": "₹120",
-      "status": "Pending",
-      "payment": "Cash on Delivery",
-    },
-    {
-      "id": "#ORD102",
-      "date": "18 Aug 2026",
-      "amount": "₹340",
-      "status": "Delivered",
-      "payment": "UPI",
-    },
-    {
-      "id": "#ORD103",
-      "date": "15 Aug 2026",
-      "amount": "₹220",
-      "status": "Cancelled",
-      "payment": "Card",
-    },
-  ];
+  final user = FirebaseAuth.instance.currentUser;
 
   @override
   Widget build(BuildContext context) {
@@ -38,26 +20,61 @@ class MyOrdersPage extends StatelessWidget {
         title: const Text("My Orders"),
         backgroundColor: Colors.blue,
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CustomerDashboardPage()),
+            );
+          },
+        ),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: orders.length,
-        itemBuilder: (context, index) {
-          final order = orders[index];
-          return _orderCard(context, order);
-        },
-      ),
+
+      body: user == null
+          ? const Center(child: Text("Please login"))
+          : StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('orders')
+                  .where('orderBy', isEqualTo: user!.email)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final orders = snapshot.data!.docs;
+
+                if (orders.isEmpty) {
+                  return const Center(child: Text("No orders found"));
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: orders.length,
+                  itemBuilder: (context, index) {
+                    final doc = orders[index];
+                    final data = doc.data() as Map<String, dynamic>;
+                    return _orderCard(context, data, doc.id);
+                  },
+                );
+              },
+            ),
     );
   }
 
-  // 🧾 ORDER CARD
-  Widget _orderCard(BuildContext context, Map<String, String> order) {
+  // 🧾 ORDER CARD (UI SAME)
+  Widget _orderCard(
+    BuildContext context,
+    Map<String, dynamic> order,
+    String orderId,
+  ) {
     Color statusColor;
-    switch (order["status"]) {
-      case "Delivered":
+    switch (order['status']) {
+      case "delivered":
         statusColor = Colors.green;
         break;
-      case "Cancelled":
+      case "cancelled":
         statusColor = Colors.red;
         break;
       default:
@@ -65,7 +82,7 @@ class MyOrdersPage extends StatelessWidget {
     }
 
     IconData paymentIcon;
-    switch (order["payment"]) {
+    switch (order['paymentMethod']) {
       case "UPI":
         paymentIcon = Icons.qr_code;
         break;
@@ -75,6 +92,10 @@ class MyOrdersPage extends StatelessWidget {
       default:
         paymentIcon = Icons.money;
     }
+
+    final createdAt = order['createdAt'] != null
+        ? (order['createdAt'] as Timestamp).toDate()
+        : DateTime.now();
 
     return Card(
       elevation: 4,
@@ -86,19 +107,19 @@ class MyOrdersPage extends StatelessWidget {
           child: const Icon(Icons.receipt_long, color: Colors.blue),
         ),
         title: Text(
-          order["id"]!,
+          "#${orderId.substring(0, 6).toUpperCase()}",
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Date: ${order["date"]}"),
-            Text("Amount: ${order["amount"]}"),
+            Text("Date: ${createdAt.day}/${createdAt.month}/${createdAt.year}"),
+            Text("Amount: ₹${order['grandTotal']}"),
             Row(
               children: [
                 Icon(paymentIcon, size: 16, color: Colors.grey),
                 const SizedBox(width: 6),
-                Text("Payment: ${order["payment"]}"),
+                Text("Payment: ${order['paymentMethod']}"),
               ],
             ),
           ],
@@ -107,7 +128,7 @@ class MyOrdersPage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              order["status"]!,
+              order['status'].toString().toUpperCase(),
               style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
@@ -117,7 +138,9 @@ class MyOrdersPage extends StatelessWidget {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => OrderDetailsPage()),
+            MaterialPageRoute(
+              builder: (_) => OrderDetailsPage(orderId: orderId),
+            ),
           );
         },
       ),

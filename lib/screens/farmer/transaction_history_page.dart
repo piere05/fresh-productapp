@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class TransactionHistoryPage extends StatelessWidget {
-  const TransactionHistoryPage({super.key}); // ✅ const fixed
+  const TransactionHistoryPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final farmerEmail = FirebaseAuth.instance.currentUser!.email!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F8E9),
       appBar: AppBar(
@@ -12,34 +16,52 @@ class TransactionHistoryPage extends StatelessWidget {
         backgroundColor: Colors.indigo,
         centerTitle: true,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: const [
-          _TransactionCard(
-            orderId: "#ORD101",
-            amount: "₹1,200",
-            type: "Credited",
-            date: "12 Aug 2026",
-          ),
-          _TransactionCard(
-            orderId: "#ORD102",
-            amount: "₹450",
-            type: "Credited",
-            date: "13 Aug 2026",
-          ),
-          _TransactionCard(
-            orderId: "#ORD103",
-            amount: "₹300",
-            type: "Debited",
-            date: "14 Aug 2026",
-          ),
-        ],
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .where('status', isEqualTo: 'delivered')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final List<Map<String, dynamic>> transactions = [];
+
+          for (var doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final createdAt = (data['createdAt'] as Timestamp).toDate();
+            final products = data['products'] as List;
+
+            for (var p in products) {
+              if (p['addedBy'] == farmerEmail) {
+                transactions.add({
+                  'orderId': doc.id,
+                  'amount': p['total'],
+                  'date': createdAt,
+                });
+              }
+            }
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: transactions.map((t) {
+              return _TransactionCard(
+                orderId: "Order ${t['orderId']}",
+                amount: "₹${t['amount']}",
+                type: "Credited",
+                date: "${t['date'].day}-${t['date'].month}-${t['date'].year}",
+              );
+            }).toList(),
+          );
+        },
       ),
     );
   }
 }
 
-// 💳 TRANSACTION CARD
+// 💳 TRANSACTION CARD (UNCHANGED UI)
 class _TransactionCard extends StatelessWidget {
   final String orderId;
   final String amount;
@@ -55,21 +77,14 @@ class _TransactionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isCredit = type == "Credited";
-
     return Card(
       elevation: 4,
       margin: const EdgeInsets.symmetric(vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: isCredit
-              ? Colors.green.shade100
-              : Colors.red.shade100,
-          child: Icon(
-            isCredit ? Icons.arrow_downward : Icons.arrow_upward,
-            color: isCredit ? Colors.green : Colors.red,
-          ),
+          backgroundColor: Colors.green.shade100,
+          child: const Icon(Icons.arrow_downward, color: Colors.green),
         ),
         title: Text(
           orderId,
@@ -81,18 +96,15 @@ class _TransactionCard extends StatelessWidget {
           children: [
             Text(
               amount,
-              style: TextStyle(
-                color: isCredit ? Colors.green : Colors.red,
+              style: const TextStyle(
+                color: Colors.green,
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
               ),
             ),
-            Text(
-              type,
-              style: TextStyle(
-                color: isCredit ? Colors.green : Colors.red,
-                fontSize: 12,
-              ),
+            const Text(
+              "Credited",
+              style: TextStyle(color: Colors.green, fontSize: 12),
             ),
           ],
         ),

@@ -1,4 +1,11 @@
+// ignore_for_file: use_build_context_synchronously
+
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'edit_profile_page.dart';
 
 class CustomerProfilePage extends StatelessWidget {
@@ -6,6 +13,8 @@ class CustomerProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
@@ -13,101 +22,172 @@ class CustomerProfilePage extends StatelessWidget {
         backgroundColor: Colors.blue,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // 👤 PROFILE CARD
-            Card(
-              elevation: 5,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: const [
-                    CircleAvatar(
-                      radius: 45,
-                      backgroundColor: Colors.blue,
-                      child: Icon(Icons.person, size: 45, color: Colors.white),
-                    ),
-                    SizedBox(height: 15),
-                    Text(
-                      "Ravi Kumar",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+      body: user == null
+          ? const Center(child: Text("Please login"))
+          : StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('customers')
+                  .doc(user.uid)
+                  .snapshots(),
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final data = snap.data!.data() as Map<String, dynamic>? ?? {};
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // ================= PROFILE CARD =================
+                      Card(
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              CircleAvatar(
+                                radius: 45,
+                                backgroundColor: Colors.blue,
+                                backgroundImage: data['imageBase64'] != null
+                                    ? MemoryImage(
+                                        base64Decode(data['imageBase64']),
+                                      )
+                                    : null,
+                                child: data['imageBase64'] == null
+                                    ? const Icon(
+                                        Icons.person,
+                                        size: 45,
+                                        color: Colors.white,
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(height: 15),
+                              Text(
+                                data['name'] ?? 'Customer',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                user.email ?? '',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 5),
-                    Text(
-                      "ravi@email.com",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
-            const SizedBox(height: 25),
+                      const SizedBox(height: 25),
 
-            // ℹ️ PROFILE INFO
-            _infoTile(Icons.phone, "Phone", "+91 98765 43210"),
-            _infoTile(Icons.location_on, "Address", "Chennai, Tamil Nadu"),
-            _infoTile(Icons.verified_user, "Status", "Active"),
+                      // ================= INFO =================
+                      _infoTile(
+                        Icons.phone,
+                        "Phone",
+                        data['phone'] ?? 'Not set',
+                      ),
 
-            const SizedBox(height: 25),
+                      _addressTile(user.uid),
 
-            // ✏️ EDIT PROFILE BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.edit),
-                label: const Text("Edit Profile"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                      _infoTile(Icons.verified_user, "Status", "Active"),
+
+                      const SizedBox(height: 25),
+
+                      // ================= EDIT PROFILE =================
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.edit),
+                          label: const Text("Edit Profile"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const EditProfilePage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // ================= CHANGE PASSWORD =================
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.lock),
+                          label: const Text("Change Password"),
+                          onPressed: () => _changePassword(context),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // ================= LOGOUT =================
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.logout),
+                          label: const Text("Logout"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: () => _logout(context),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const EditProfilePage()),
-                  );
-                },
-              ),
+                );
+              },
             ),
-
-            const SizedBox(height: 12),
-
-            // 🚪 LOGOUT BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.logout),
-                label: const Text("Logout"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: () {
-                  _confirmLogout(context);
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
-  // 🔹 INFO TILE
+  // ================= ADDRESS (SUB COLLECTION) =================
+  Widget _addressTile(String uid) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('customers')
+          .doc(uid)
+          .collection('addresses')
+          .limit(1)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return _infoTile(Icons.location_on, "Address", "Not added");
+        }
+
+        final d = snap.data!.docs.first.data() as Map<String, dynamic>;
+
+        return _infoTile(
+          Icons.location_on,
+          "Address",
+          "${d['address']}, ${d['city']} - ${d['pincode']}",
+        );
+      },
+    );
+  }
+
+  // ================= INFO TILE =================
   Widget _infoTile(IconData icon, String label, String value) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -119,27 +199,74 @@ class CustomerProfilePage extends StatelessWidget {
     );
   }
 
-  // 🔐 LOGOUT CONFIRMATION
-  void _confirmLogout(BuildContext context) {
+  // ================= CHANGE PASSWORD =================
+  void _changePassword(BuildContext context) {
+    final oldPass = TextEditingController();
+    final newPass = TextEditingController();
+    final confirmPass = TextEditingController();
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Logout"),
-        content: const Text("Are you sure you want to logout?"),
+        title: const Text("Change Password"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: oldPass,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: "Old Password"),
+            ),
+            TextField(
+              controller: newPass,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: "New Password"),
+            ),
+            TextField(
+              controller: confirmPass,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: "Confirm Password"),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text("Cancel"),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              if (newPass.text.length < 8 || newPass.text != confirmPass.text) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Password invalid")),
+                );
+                return;
+              }
+
+              final user = FirebaseAuth.instance.currentUser!;
+              final cred = EmailAuthProvider.credential(
+                email: user.email!,
+                password: oldPass.text,
+              );
+
+              await user.reauthenticateWithCredential(cred);
+              await user.updatePassword(newPass.text);
+
               Navigator.pop(context);
-              Navigator.pop(context); // back to dashboard / login
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text("Password updated")));
             },
-            child: const Text("Logout"),
+            child: const Text("Update"),
           ),
         ],
       ),
     );
+  }
+
+  // ================= LOGOUT =================
+  void _logout(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
+    Navigator.pop(context);
   }
 }

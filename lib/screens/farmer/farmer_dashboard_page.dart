@@ -7,7 +7,6 @@ import 'my_products_page.dart';
 import 'orders_page.dart';
 import 'reports_page.dart';
 import 'farmer_profile_page.dart';
-import 'settings_page.dart';
 import 'earnings_page.dart';
 import 'notifications_page.dart';
 import 'stock_management_page.dart';
@@ -109,13 +108,7 @@ class FarmerDashboardPage extends StatelessWidget {
             color: Colors.purple,
             page: FarmerProfilePage(),
           ),
-          _dashboardCard(
-            context,
-            icon: Icons.settings,
-            title: "Settings",
-            color: Colors.grey,
-            page: SettingsPage(),
-          ),
+
           _dashboardCard(
             context,
             icon: Icons.attach_money,

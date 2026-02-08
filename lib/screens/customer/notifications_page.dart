@@ -1,36 +1,15 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'order_details_page.dart';
 
 class NotificationsPage extends StatelessWidget {
   NotificationsPage({super.key});
 
-  final List<Map<String, String>> notifications = [
-    {
-      "title": "Order Confirmed",
-      "message": "Your order #ORD101 has been confirmed",
-      "time": "Just now",
-      "type": "success",
-    },
-    {
-      "title": "Order Shipped",
-      "message": "Order #ORD102 is on the way",
-      "time": "2 hours ago",
-      "type": "info",
-    },
-    {
-      "title": "Order Delivered",
-      "message": "Order #ORD100 has been delivered successfully",
-      "time": "Yesterday",
-      "type": "success",
-    },
-    {
-      "title": "Order Cancelled",
-      "message": "Order #ORD099 was cancelled",
-      "time": "2 days ago",
-      "type": "error",
-    },
-  ];
+  final user = FirebaseAuth.instance.currentUser;
 
   @override
   Widget build(BuildContext context) {
@@ -41,27 +20,57 @@ class NotificationsPage extends StatelessWidget {
         backgroundColor: Colors.blue,
         centerTitle: true,
       ),
-      body: notifications.isEmpty
-          ? const Center(
-              child: Text("No notifications", style: TextStyle(fontSize: 16)),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: notifications.length,
-              itemBuilder: (context, index) {
-                final notification = notifications[index];
-                return _notificationCard(notification);
+      body: user == null
+          ? const Center(child: Text("Please login"))
+          : StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('userEmail', isEqualTo: user!.email)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data!.docs;
+
+                if (docs.isEmpty) {
+                  return const Center(child: Text("No notifications"));
+                }
+
+                // ✅ SORT IN DART (NEWEST FIRST)
+                docs.sort((a, b) {
+                  final aTime =
+                      (a['createdAt'] as Timestamp?)?.toDate() ??
+                      DateTime(2000);
+                  final bTime =
+                      (b['createdAt'] as Timestamp?)?.toDate() ??
+                      DateTime(2000);
+                  return bTime.compareTo(aTime);
+                });
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final data = docs[index].data() as Map<String, dynamic>;
+                    return _notificationCard(context, data);
+                  },
+                );
               },
             ),
     );
   }
 
-  // 🔔 NOTIFICATION CARD
-  Widget _notificationCard(Map<String, String> notification) {
+  // ================= NOTIFICATION CARD =================
+  Widget _notificationCard(
+    BuildContext context,
+    Map<String, dynamic> notification,
+  ) {
     Color iconColor;
     IconData icon;
 
-    switch (notification["type"]) {
+    switch (notification['type']) {
       case "success":
         iconColor = Colors.green;
         icon = Icons.check_circle;
@@ -75,6 +84,15 @@ class NotificationsPage extends StatelessWidget {
         icon = Icons.info;
     }
 
+    final createdAt = notification['createdAt'] != null
+        ? (notification['createdAt'] as Timestamp).toDate()
+        : DateTime.now();
+
+    final date =
+        "${createdAt.day.toString().padLeft(2, '0')}/"
+        "${createdAt.month.toString().padLeft(2, '0')}/"
+        "${createdAt.year}";
+
     return Card(
       elevation: 3,
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -85,15 +103,23 @@ class NotificationsPage extends StatelessWidget {
           child: Icon(icon, color: iconColor),
         ),
         title: Text(
-          notification["title"]!,
+          notification['title'] ?? '',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(notification["message"]!),
+        subtitle: Text(notification['message'] ?? ''),
         trailing: Text(
-          notification["time"]!,
+          date,
           style: const TextStyle(fontSize: 12, color: Colors.grey),
         ),
-        onTap: () {},
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  OrderDetailsPage(orderId: notification['orderId']),
+            ),
+          );
+        },
       ),
     );
   }

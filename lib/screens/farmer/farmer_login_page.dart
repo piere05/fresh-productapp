@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'farmer_dashboard_page.dart';
 import 'create_farmer_account_page.dart';
@@ -50,7 +51,7 @@ class _FarmerLoginPageState extends State<FarmerLoginPage> {
 
       final uid = cred.user!.uid;
 
-      // 📄 Farmer document
+      // 📄 Farmer document check
       final doc = await FirebaseFirestore.instance
           .collection('farmers')
           .doc(uid)
@@ -78,7 +79,12 @@ class _FarmerLoginPageState extends State<FarmerLoginPage> {
         return;
       }
 
-      // ✅ Success
+      // ✅ SAVE SESSION (IMPORTANT PART)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('role', 'farmer');
+      await prefs.setString('userEmail', email);
+
+      // ✅ LOGIN SUCCESS
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const FarmerDashboardPage()),
@@ -118,6 +124,13 @@ class _FarmerLoginPageState extends State<FarmerLoginPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -193,9 +206,7 @@ class _FarmerLoginPageState extends State<FarmerLoginPage> {
                   ),
                 ),
 
-                const SizedBox(height: 10),
-
-                const SizedBox(height: 15),
+                const SizedBox(height: 20),
 
                 SizedBox(
                   width: double.infinity,

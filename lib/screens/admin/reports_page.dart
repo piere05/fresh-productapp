@@ -57,8 +57,9 @@ class _ReportsPageState extends State<ReportsPage> {
 
           final from = _fromDate();
 
-          final filteredOrders = from == null
-              ? orders
+          // ================= FILTER =================
+          List<QueryDocumentSnapshot> filteredOrders = from == null
+              ? List.from(orders)
               : orders.where((o) {
                   final data = o.data() as Map<String, dynamic>;
                   if (data['createdAt'] == null) return false;
@@ -66,6 +67,18 @@ class _ReportsPageState extends State<ReportsPage> {
                   return d.isAfter(from);
                 }).toList();
 
+          // ================= SORT (LATEST FIRST) =================
+          filteredOrders.sort((a, b) {
+            final aDate =
+                (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+            final bDate =
+                (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+
+            if (aDate == null || bDate == null) return 0;
+            return bDate.toDate().compareTo(aDate.toDate());
+          });
+
+          // ================= REVENUE =================
           double revenue = 0;
           for (var o in filteredOrders) {
             final data = o.data() as Map<String, dynamic>;
@@ -77,7 +90,6 @@ class _ReportsPageState extends State<ReportsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ================= OVERVIEW =================
                 const Text(
                   "Overview",
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -120,7 +132,6 @@ class _ReportsPageState extends State<ReportsPage> {
 
                 const SizedBox(height: 25),
 
-                // ================= FILTER =================
                 const Text(
                   "Report Period",
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -140,24 +151,34 @@ class _ReportsPageState extends State<ReportsPage> {
 
                 const SizedBox(height: 30),
 
-                // ================= RECENT ACTIVITY =================
                 const Text(
                   "Recent Activity",
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
 
-                ...filteredOrders.take(5).map((o) {
-                  final data = o.data() as Map<String, dynamic>;
-                  final orderNo = data['orderId'] ?? o.id;
+                filteredOrders.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(child: Text("No orders found")),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: filteredOrders.length,
+                        itemBuilder: (context, index) {
+                          final o = filteredOrders[index];
+                          final data = o.data() as Map<String, dynamic>;
+                          final orderNo = data['orderId'] ?? o.id;
 
-                  return _activityTile(
-                    icon: Icons.shopping_cart,
-                    title: "New Order",
-                    subtitle: "Order $orderNo",
-                    time: _timeAgo(data['createdAt']),
-                  );
-                }),
+                          return _activityTile(
+                            icon: Icons.shopping_cart,
+                            title: "New Order",
+                            subtitle: "Order $orderNo",
+                            time: _timeAgo(data['createdAt']),
+                          );
+                        },
+                      ),
               ],
             ),
           );
@@ -173,9 +194,7 @@ class _ReportsPageState extends State<ReportsPage> {
       label: Text(label),
       selected: selected,
       selectedColor: Colors.indigo.withOpacity(0.25),
-      onSelected: (_) {
-        setState(() => _period = label);
-      },
+      onSelected: (_) => setState(() => _period = label),
     );
   }
 
@@ -238,7 +257,7 @@ class _StatCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min, // 🔥 overflow fix
+          mainAxisSize: MainAxisSize.min,
           children: [
             CircleAvatar(
               backgroundColor: color.withOpacity(0.15),

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'create_customer_account_page.dart';
 import 'customer_dashboard_page.dart';
@@ -19,6 +20,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _loading = false;
 
   bool _isValidEmail(String email) {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
@@ -33,18 +35,16 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     final password = _passwordController.text.trim();
 
     if (!_isValidEmail(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Enter a valid email address")),
-      );
+      _show("Enter a valid email address");
       return;
     }
 
     if (!_isValidPassword(password)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Password must be at least 8 characters")),
-      );
+      _show("Password must be at least 8 characters");
       return;
     }
+
+    setState(() => _loading = true);
 
     try {
       final auth = FirebaseAuth.instance;
@@ -61,29 +61,44 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
       if (!doc.exists) {
         await auth.signOut();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Customer account not found")),
-        );
+        _show("Customer account not found");
         return;
       }
 
       if (doc['isBlocked'] == true) {
         await auth.signOut();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Your account is blocked")),
-        );
+        _show("Your account is blocked");
         return;
       }
 
+      // ✅ SAVE SESSION
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('role', 'customer');
+      await prefs.setString('userEmail', email);
+
+      // ✅ LOGIN SUCCESS
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const CustomerDashboardPage()),
       );
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message ?? "Login failed")));
+      _show(e.message ?? "Login failed");
+    } finally {
+      setState(() => _loading = false);
     }
+  }
+
+  void _show(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -162,20 +177,22 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                   ),
                 ),
 
-                const SizedBox(height: 15),
+                const SizedBox(height: 20),
 
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _login,
+                    onPressed: _loading ? null : _login,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(15),
                       ),
                     ),
-                    child: const Text("Login", style: TextStyle(fontSize: 16)),
+                    child: _loading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text("Login", style: TextStyle(fontSize: 16)),
                   ),
                 ),
 

@@ -1,6 +1,8 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../role_selection/role_selection_page.dart';
 import 'add_product_page.dart';
@@ -21,8 +23,8 @@ class FarmerDashboardPage extends StatelessWidget {
     Navigator.push(context, MaterialPageRoute(builder: (_) => page));
   }
 
-  // 🔐 Logout confirmation
-  void _confirmLogout(BuildContext context) {
+  // 🔐 Logout confirmation + clear session
+  Future<void> _confirmLogout(BuildContext context) async {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -34,16 +36,24 @@ class FarmerDashboardPage extends StatelessWidget {
             child: const Text("Cancel"),
           ),
           TextButton(
-            onPressed: () {
+            child: const Text("Logout"),
+            onPressed: () async {
               Navigator.pop(context); // close dialog
 
+              // 🔥 Firebase sign out
+              await FirebaseAuth.instance.signOut();
+
+              // 🧹 Clear SharedPreferences
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              // 🔁 Go to role selection (clear stack)
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
                 (_) => false,
               );
             },
-            child: const Text("Logout"),
           ),
         ],
       ),
@@ -66,7 +76,6 @@ class FarmerDashboardPage extends StatelessWidget {
               _go(context, NotificationsPage());
             },
           ),
-
           IconButton(
             icon: const Icon(Icons.person),
             tooltip: "Profile",
@@ -123,7 +132,6 @@ class FarmerDashboardPage extends StatelessWidget {
             color: Colors.purple,
             page: FarmerProfilePage(),
           ),
-
           _dashboardCard(
             context,
             icon: Icons.attach_money,

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'admin_dashboard_page.dart';
 
@@ -55,7 +56,12 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
 
-      // ✅ LOGIN SUCCESS
+      // ✅ SAVE LOGIN SESSION
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('role', 'admin');
+      await prefs.setString('userEmail', email);
+
+      // ✅ REDIRECT TO DASHBOARD
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const AdminDashboardPage()),
@@ -124,7 +130,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                 ),
                 const SizedBox(height: 25),
 
-                // EMAIL
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -139,7 +144,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
 
                 const SizedBox(height: 15),
 
-                // PASSWORD
                 TextField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -164,11 +168,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                   ),
                 ),
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 20),
 
-                const SizedBox(height: 15),
-
-                // LOGIN BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 50,

@@ -3,9 +3,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import 'create_ticket_page.dart';
 
@@ -61,6 +63,7 @@ class OrderDetailsPage extends StatelessWidget {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 15),
 
                 _card(
@@ -80,6 +83,7 @@ class OrderDetailsPage extends StatelessWidget {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 15),
 
                 _card(
@@ -88,7 +92,7 @@ class OrderDetailsPage extends StatelessWidget {
                     children: [
                       ...products.map(
                         (p) => _row(
-                          "${p['productName']} (x${p['qty']})",
+                          "${p['productName']} x${p['qty']}",
                           "Rs. ${p['total']}",
                         ),
                       ),
@@ -103,6 +107,7 @@ class OrderDetailsPage extends StatelessWidget {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 15),
 
                 _card(
@@ -114,29 +119,18 @@ class OrderDetailsPage extends StatelessWidget {
                     "Phone: ${address['phone']}",
                   ),
                 ),
+
                 const SizedBox(height: 25),
 
-                // ⬇️ DOWNLOAD RECEIPT (TXT)
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.receipt_long),
-                    label: const Text("Download Receipt"),
-                    onPressed: () {
-                      if (kIsWeb) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              "Receipt download is available on mobile app only",
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      _downloadReceipt(context, data);
-                    },
+                    icon: const Icon(Icons.download),
+                    label: const Text("Download Invoice (PDF)"),
+                    onPressed: () => _generateInvoice(context, data),
                   ),
                 ),
+
                 const SizedBox(height: 10),
 
                 SizedBox(
@@ -165,45 +159,92 @@ class OrderDetailsPage extends StatelessWidget {
     );
   }
 
-  // ================= RECEIPT (TXT FILE) =================
-  Future<void> _downloadReceipt(
+  // ================= PDF GENERATION (DOWNLOAD ONLY) =================
+  Future<void> _generateInvoice(
     BuildContext context,
     Map<String, dynamic> order,
   ) async {
+    final pdf = pw.Document();
+
     final products = List<Map<String, dynamic>>.from(order['products']);
     final address = Map<String, dynamic>.from(order['deliveryAddress']);
 
-    final buffer = StringBuffer();
-    buffer.writeln("Fresh Product App");
-    buffer.writeln("Order ID: $orderId");
-    buffer.writeln("Date: ${DateTime.now().toString().split(' ').first}");
-    buffer.writeln("----------------------------------");
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(16),
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              "Fresh Products App - Invoice",
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 10),
 
-    for (var p in products) {
-      buffer.writeln("${p['productName']} x${p['qty']} = Rs. ${p['total']}");
-    }
+            pw.Text("Order ID: $orderId"),
+            pw.Text(
+              "Date: ${(order['createdAt'] as Timestamp).toDate().toString().split(' ').first}",
+            ),
+            pw.Text("Payment: ${order['paymentMethod']}"),
 
-    buffer.writeln("----------------------------------");
-    buffer.writeln("Items Total: Rs. ${order['itemsTotal']}");
-    buffer.writeln("Delivery Fee: Rs. ${order['deliveryFee']}");
-    buffer.writeln("Grand Total: Rs. ${order['grandTotal']}");
-    buffer.writeln("----------------------------------");
-    buffer.writeln("Delivery Address:");
-    buffer.writeln(address['name']);
-    buffer.writeln(address['address']);
-    buffer.writeln("${address['city']} - ${address['pincode']}");
-    buffer.writeln("Phone: ${address['phone']}");
+            pw.SizedBox(height: 12),
+
+            pw.Text(
+              "Delivery Address",
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            ),
+            pw.Text(address['name']),
+            pw.Text(address['address']),
+            pw.Text("${address['city']} - ${address['pincode']}"),
+            pw.Text("Phone: ${address['phone']}"),
+
+            pw.SizedBox(height: 15),
+
+            pw.Table.fromTextArray(
+              headers: ["Product", "Qty", "Price", "Total"],
+              data: products.map((p) {
+                return [
+                  p['productName'],
+                  p['qty'].toString(),
+                  "Rs. ${p['price']}",
+                  "Rs. ${p['total']}",
+                ];
+              }).toList(),
+            ),
+
+            pw.SizedBox(height: 12),
+
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text("Items Total: Rs. ${order['itemsTotal']}"),
+                  pw.Text("Delivery Fee: Rs. ${order['deliveryFee']}"),
+                  pw.Text(
+                    "Grand Total: Rs. ${order['grandTotal']}",
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
 
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(
-      "${dir.path}/receipt_${DateTime.now().millisecondsSinceEpoch}.txt",
-    );
+    final file = File("${dir.path}/invoice_$orderId.pdf");
 
-    await file.writeAsString(buffer.toString());
+    await file.writeAsBytes(await pdf.save());
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Receipt downloaded successfully")),
+      const SnackBar(content: Text("Invoice downloaded successfully")),
     );
+
+    // Optional: open PDF automatically
+    await OpenFilex.open(file.path);
   }
 
   // ================= UI HELPERS =================

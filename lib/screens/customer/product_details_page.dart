@@ -75,6 +75,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage> {
         'productName': widget.productData['name'],
         'price': widget.productData['price'],
         'addedBy': widget.productData['addedBy'],
+        'category': widget.productData['category'],
         'createdAt': FieldValue.serverTimestamp(),
       });
 

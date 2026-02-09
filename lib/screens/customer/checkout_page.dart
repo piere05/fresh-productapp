@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import 'add_address_page.dart';
 import 'order_placed_page.dart';
@@ -21,6 +22,53 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final user = FirebaseAuth.instance.currentUser;
   static const int deliveryFee = 50;
 
+  late Razorpay _razorpay;
+  int _payableAmount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear();
+    super.dispose();
+  }
+
+  // ===================== RAZORPAY =====================
+  void _openRazorpay(int amount) {
+    var options = {
+      'key': 'rzp_test_S6S0e6VGPJ5FMo',
+      'amount': amount * 100,
+      'currency': 'INR',
+      'name': 'Fresh Products',
+      'description': 'Order Payment',
+      'prefill': {'email': user!.email},
+      'retry': {'enabled': true, 'max_count': 1},
+      'timeout': 120,
+    };
+
+    _razorpay.open(options);
+  }
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    await _placeOrder(paymentId: response.paymentId);
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Payment Failed"),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  // ===================== BUILD =====================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,9 +118,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         if (_selectedAddressId == null && docs.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              setState(() {
-                _selectedAddressId = docs.first.id;
-              });
+              setState(() => _selectedAddressId = docs.first.id);
             }
           });
         }
@@ -81,7 +127,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
           "Delivery Address",
           Column(
             children: [
-              if (docs.isEmpty) const Text("No address found"),
               ...docs.map((doc) {
                 final d = doc.data() as Map<String, dynamic>;
                 return RadioListTile(
@@ -135,17 +180,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
           );
         }
 
-        int totalQty = 0;
         int itemsTotal = 0;
 
         for (var d in snapshot.data!.docs) {
-          final qty = (d['qty'] as num).toInt();
-          final price = (d['price'] as num).toInt();
-          totalQty += qty;
-          itemsTotal += qty * price;
+          itemsTotal += (d['qty'] as num).toInt() * (d['price'] as num).toInt();
         }
 
-        final int grandTotal = itemsTotal + deliveryFee;
+        _payableAmount = itemsTotal + deliveryFee;
 
         return _card(
           "Order Summary",
@@ -158,11 +199,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
               ),
               const Divider(),
-              _row("Total Items", "$totalQty"),
               _row("Items Total", "₹$itemsTotal"),
               _row("Delivery Fee", "₹$deliveryFee"),
               const Divider(),
-              _row("Grand Total", "₹$grandTotal", bold: true),
+              _row("Grand Total", "₹$_payableAmount", bold: true),
             ],
           ),
         );
@@ -183,7 +223,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             onChanged: (v) => setState(() => _selectedPayment = v.toString()),
           ),
           RadioListTile(
-            value: "UPI",
+            value: "ONLINE",
             groupValue: _selectedPayment,
             title: const Text("UPI / Online Payment"),
             onChanged: (v) => setState(() => _selectedPayment = v.toString()),
@@ -202,13 +242,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
         icon: const Icon(Icons.check_circle),
         label: const Text("Place Order", style: TextStyle(fontSize: 16)),
         style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-        onPressed: _selectedAddressId == null ? null : _placeOrder,
+        onPressed: _selectedAddressId == null
+            ? null
+            : () {
+                if (_selectedPayment == "ONLINE") {
+                  _openRazorpay(_payableAmount);
+                } else {
+                  _placeOrder();
+                }
+              },
       ),
     );
   }
 
-  // ===================== ORDER SAVE (ID FROM ORDERS COLLECTION) =====================
-  Future<void> _placeOrder() async {
+  // ===================== ORDER SAVE =====================
+  Future<void> _placeOrder({String? paymentId}) async {
     final firestore = FirebaseFirestore.instance;
 
     final cartSnap = await firestore
@@ -216,9 +264,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .where('userEmail', isEqualTo: user!.email)
         .get();
 
-    if (cartSnap.docs.isEmpty) return;
-
-    // 🔥 GET LAST ORDER ID
     final lastOrderSnap = await firestore
         .collection('orders')
         .orderBy('createdAt', descending: true)
@@ -226,15 +271,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .get();
 
     int nextNumber = 1;
-
     if (lastOrderSnap.docs.isNotEmpty) {
-      final lastId = lastOrderSnap.docs.first.id; // FRESH023
-      final numericPart =
-          int.tryParse(lastId.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      nextNumber = numericPart + 1;
+      final lastId = lastOrderSnap.docs.first.id;
+      nextNumber = int.parse(lastId.replaceAll(RegExp(r'[^0-9]'), '')) + 1;
     }
 
-    final newOrderId = "FRESH${nextNumber.toString().padLeft(3, '0')}";
+    final orderId = "FRESH${nextNumber.toString().padLeft(3, '0')}";
 
     final addressDoc = await firestore
         .collection('customers')
@@ -243,38 +285,33 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .doc(_selectedAddressId)
         .get();
 
-    await firestore.runTransaction((transaction) async {
+    await firestore.runTransaction((tx) async {
       int itemsTotal = 0;
-      int totalQty = 0;
       final products = <Map<String, dynamic>>[];
 
-      for (int i = 0; i < cartSnap.docs.length; i++) {
-        final data = cartSnap.docs[i].data();
+      for (var d in cartSnap.docs) {
+        final int qty = (d['qty'] as num).toInt();
+        final int price = (d['price'] as num).toInt();
 
-        final qty = (data['qty'] as num).toInt();
-        final price = (data['price'] as num).toInt();
-        final total = qty * price;
-
-        totalQty += qty;
-        itemsTotal += total;
+        itemsTotal += qty * price;
 
         products.add({
-          'sno': i + 1,
-          'productId': data['productId'],
-          'productName': data['productName'],
+          'productName': d['productName'],
           'qty': qty,
           'price': price,
-          'total': total,
-          'addedBy': data['addedBy'],
+          'total': qty * price,
+          'addedBy': d['addedBy'],
         });
+
+        tx.delete(d.reference);
       }
 
-      transaction.set(firestore.collection('orders').doc(newOrderId), {
-        'orderId': newOrderId,
+      tx.set(firestore.collection('orders').doc(orderId), {
+        'orderId': orderId,
         'orderBy': user!.email,
-        'paymentMethod': _selectedPayment,
+        'paymentMethod': _selectedPayment == "ONLINE" ? "Razorpay" : "COD",
+        'paymentId': paymentId,
         'status': 'placed',
-        'totalItems': totalQty,
         'itemsTotal': itemsTotal,
         'deliveryFee': deliveryFee,
         'grandTotal': itemsTotal + deliveryFee,
@@ -282,10 +319,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
         'products': products,
         'createdAt': Timestamp.now(),
       });
-
-      for (final d in cartSnap.docs) {
-        transaction.delete(d.reference);
-      }
     });
 
     Navigator.pushAndRemoveUntil(

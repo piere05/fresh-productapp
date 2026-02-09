@@ -1,15 +1,76 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// ✅ IMPORT ALL LOGIN PAGES
+// LOGIN PAGES
 import '../admin/admin_login_page.dart';
 import '../farmer/farmer_login_page.dart';
 import '../customer/customer_login_page.dart';
 
-class RoleSelectionPage extends StatelessWidget {
+// DASHBOARDS
+import '../admin/admin_dashboard_page.dart';
+import '../farmer/farmer_dashboard_page.dart';
+import '../customer/customer_dashboard_page.dart';
+
+class RoleSelectionPage extends StatefulWidget {
   const RoleSelectionPage({super.key});
 
   @override
+  State<RoleSelectionPage> createState() => _RoleSelectionPageState();
+}
+
+class _RoleSelectionPageState extends State<RoleSelectionPage> {
+  bool _checkingSession = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedLogin();
+  }
+
+  Future<void> _checkSavedLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final role = prefs.getString('role');
+    final email = prefs.getString('userEmail');
+
+    if (role != null && email != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        Widget target;
+
+        switch (role) {
+          case 'admin':
+            target = const AdminDashboardPage();
+            break;
+          case 'farmer':
+            target = const FarmerDashboardPage();
+            break;
+          case 'customer':
+            target = const CustomerDashboardPage();
+            break;
+          default:
+            return;
+        }
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => target),
+        );
+      });
+    } else {
+      if (mounted) {
+        setState(() => _checkingSession = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_checkingSession) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F8E9),
       body: Center(
@@ -56,7 +117,6 @@ class RoleSelectionPage extends StatelessWidget {
 
               const SizedBox(height: 25),
 
-              // ✅ ADMIN BUTTON
               RoleButton(
                 text: "Admin",
                 icon: Icons.admin_panel_settings,
@@ -71,7 +131,6 @@ class RoleSelectionPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // ✅ FARMER BUTTON
               RoleButton(
                 text: "Farmer",
                 icon: Icons.agriculture,
@@ -86,7 +145,6 @@ class RoleSelectionPage extends StatelessWidget {
 
               const SizedBox(height: 15),
 
-              // ✅ CUSTOMER BUTTON
               RoleButton(
                 text: "Customer",
                 icon: Icons.shopping_cart,
@@ -108,7 +166,7 @@ class RoleSelectionPage extends StatelessWidget {
   }
 }
 
-/// 🔘 ROLE BUTTON WIDGET
+// 🔘 ROLE BUTTON WIDGET
 class RoleButton extends StatelessWidget {
   final String text;
   final IconData icon;

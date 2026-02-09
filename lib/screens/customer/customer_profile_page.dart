@@ -5,7 +5,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../role_selection/role_selection_page.dart';
 import 'edit_profile_page.dart';
 
 class CustomerProfilePage extends StatelessWidget {
@@ -86,15 +88,12 @@ class CustomerProfilePage extends StatelessWidget {
 
                       const SizedBox(height: 25),
 
-                      // ================= INFO =================
                       _infoTile(
                         Icons.phone,
                         "Phone",
                         data['phone'] ?? 'Not set',
                       ),
-
                       _addressTile(user.uid),
-
                       _infoTile(Icons.verified_user, "Status", "Active"),
 
                       const SizedBox(height: 25),
@@ -151,7 +150,7 @@ class CustomerProfilePage extends StatelessWidget {
                               borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          onPressed: () => _logout(context),
+                          onPressed: () => _confirmLogout(context),
                         ),
                       ),
                     ],
@@ -162,7 +161,7 @@ class CustomerProfilePage extends StatelessWidget {
     );
   }
 
-  // ================= ADDRESS (SUB COLLECTION) =================
+  // ================= ADDRESS =================
   Widget _addressTile(String uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -264,9 +263,40 @@ class CustomerProfilePage extends StatelessWidget {
     );
   }
 
-  // ================= LOGOUT =================
-  void _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    Navigator.pop(context);
+  // ================= LOGOUT (FINAL FIX) =================
+  Future<void> _confirmLogout(BuildContext context) async {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Logout"),
+        content: const Text("Are you sure you want to logout?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            child: const Text("Logout"),
+            onPressed: () async {
+              Navigator.pop(context);
+
+              // 🔥 Firebase logout
+              await FirebaseAuth.instance.signOut();
+
+              // 🧹 Clear shared preferences
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              // 🔁 Go to role selection (clear stack)
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
+                (_) => false,
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

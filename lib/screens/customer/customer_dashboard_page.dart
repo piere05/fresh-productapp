@@ -1,6 +1,8 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../role_selection/role_selection_page.dart';
 import 'browse_products_page.dart';
@@ -20,9 +22,8 @@ class CustomerDashboardPage extends StatelessWidget {
     Navigator.push(context, MaterialPageRoute(builder: (_) => page));
   }
 
-  // 🔐 Logout confirmation (SAFE)
-  // 🔐 Logout confirmation (GO TO LOGIN PAGE)
-  void _confirmLogout(BuildContext context) {
+  // 🔐 Logout confirmation + clear session
+  Future<void> _confirmLogout(BuildContext context) async {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -34,16 +35,24 @@ class CustomerDashboardPage extends StatelessWidget {
             child: const Text("Cancel"),
           ),
           TextButton(
-            onPressed: () {
+            child: const Text("Logout"),
+            onPressed: () async {
               Navigator.pop(context); // close dialog
 
+              // 🔥 Firebase sign out
+              await FirebaseAuth.instance.signOut();
+
+              // 🧹 Clear SharedPreferences
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              // 🔁 Back to role selection (clear stack)
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
                 (_) => false,
               );
             },
-            child: const Text("Logout"),
           ),
         ],
       ),
@@ -164,7 +173,7 @@ class CustomerDashboardPage extends StatelessWidget {
     );
   }
 
-  // 🧩 DASHBOARD CARD WIDGET
+  // 🧩 DASHBOARD CARD
   Widget _dashboardCard(
     BuildContext context, {
     required IconData icon,

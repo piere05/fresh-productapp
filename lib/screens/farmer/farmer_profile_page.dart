@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:project/screens/role_selection/role_selection_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FarmerProfilePage extends StatefulWidget {
   const FarmerProfilePage({super.key});
@@ -29,9 +31,21 @@ class _FarmerProfilePageState extends State<FarmerProfilePage> {
           ),
           TextButton(
             onPressed: () async {
+              Navigator.pop(context); // close dialog
+
+              // 🔥 Firebase sign out
               await FirebaseAuth.instance.signOut();
-              Navigator.pop(context);
-              Navigator.pop(context);
+
+              // 🧹 Clear SharedPreferences
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              // 🔁 Go to role selection (clear stack)
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
+                (_) => false,
+              );
             },
             child: const Text("Logout"),
           ),

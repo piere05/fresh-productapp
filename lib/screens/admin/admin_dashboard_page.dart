@@ -1,6 +1,9 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'admin_notification.dart';
 import 'farmers_page.dart';
 import 'customers_page.dart';
@@ -10,6 +13,9 @@ import 'reports_page.dart';
 import 'support_page.dart';
 import 'admin_profile_page.dart';
 
+// 🔁 BACK TO ROLE SELECTION
+import '../role_selection/role_selection_page.dart';
+
 class AdminDashboardPage extends StatelessWidget {
   const AdminDashboardPage({super.key});
 
@@ -17,8 +23,8 @@ class AdminDashboardPage extends StatelessWidget {
     Navigator.push(context, MaterialPageRoute(builder: (_) => page));
   }
 
-  // 🔐 Logout confirmation dialog
-  void _confirmLogout(BuildContext context) {
+  // 🔐 LOGOUT CONFIRMATION + CLEAR SESSION
+  Future<void> _confirmLogout(BuildContext context) async {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -30,11 +36,24 @@ class AdminDashboardPage extends StatelessWidget {
             child: const Text("Cancel"),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context); // back to login
-            },
             child: const Text("Logout"),
+            onPressed: () async {
+              Navigator.pop(context);
+
+              // 🔥 FIREBASE SIGN OUT
+              await FirebaseAuth.instance.signOut();
+
+              // 🧹 CLEAR SHARED PREFS
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              // 🔁 GO TO ROLE SELECTION (CLEAR STACK)
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
+                (_) => false,
+              );
+            },
           ),
         ],
       ),
@@ -50,7 +69,7 @@ class AdminDashboardPage extends StatelessWidget {
         backgroundColor: Colors.redAccent,
         centerTitle: true,
         actions: [
-          // 🔔 Notifications (Demo)
+          // 🔔 Notifications
           IconButton(
             icon: const Icon(Icons.notifications),
             onPressed: () {
@@ -61,7 +80,7 @@ class AdminDashboardPage extends StatelessWidget {
             },
           ),
 
-          // 👤 Admin Profile
+          // 👤 Profile
           IconButton(
             icon: const Icon(Icons.person),
             tooltip: "Profile",

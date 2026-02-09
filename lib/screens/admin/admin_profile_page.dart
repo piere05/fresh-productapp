@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../role_selection/role_selection_page.dart';
 
@@ -278,8 +279,16 @@ class AdminProfilePage extends StatelessWidget {
           ),
           TextButton(
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
               Navigator.pop(context);
+
+              // 🔥 FIREBASE SIGN OUT
+              await FirebaseAuth.instance.signOut();
+
+              // 🧹 CLEAR SHARED PREFS
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              // 🔁 GO TO ROLE SELECTION (CLEAR STACK)
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const RoleSelectionPage()),

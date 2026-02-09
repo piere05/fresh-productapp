@@ -2,7 +2,9 @@
 
 import 'package:flutter/material.dart';
 
+import '../role_selection/role_selection_page.dart';
 import 'add_product_page.dart';
+import 'farmer_tickets_page.dart';
 import 'my_products_page.dart';
 import 'orders_page.dart';
 import 'reports_page.dart';
@@ -33,8 +35,13 @@ class FarmerDashboardPage extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context); // back to login
+              Navigator.pop(context); // close dialog
+
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
+                (_) => false,
+              );
             },
             child: const Text("Logout"),
           ),
@@ -52,6 +59,14 @@ class FarmerDashboardPage extends StatelessWidget {
         backgroundColor: Colors.green,
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications),
+            tooltip: "Notifications",
+            onPressed: () {
+              _go(context, NotificationsPage());
+            },
+          ),
+
           IconButton(
             icon: const Icon(Icons.person),
             tooltip: "Profile",
@@ -136,6 +151,13 @@ class FarmerDashboardPage extends StatelessWidget {
             title: "Support",
             color: Colors.deepOrange,
             page: SupportPage(),
+          ),
+          _dashboardCard(
+            context,
+            icon: Icons.report_problem,
+            title: "My Issues",
+            color: Colors.redAccent,
+            page: FarmerTicketsPage(),
           ),
         ],
       ),

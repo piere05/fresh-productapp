@@ -1,66 +1,57 @@
-// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_local_variable
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-class AdminSupportPage extends StatelessWidget {
-  const AdminSupportPage({super.key});
+class FarmerTicketsPage extends StatelessWidget {
+  FarmerTicketsPage({super.key});
+
+  final farmerEmail = FirebaseAuth.instance.currentUser!.email;
 
   @override
   Widget build(BuildContext context) {
-    final admin = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: const Text("Farmer Support Tickets"),
-        backgroundColor: Colors.teal.shade700,
+        title: const Text("Customer Support Tickets"),
+        backgroundColor: Colors.deepPurple,
         centerTitle: true,
       ),
-      body: admin == null
-          ? const Center(child: Text("Please login"))
-          : StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('tickets')
-                  .where('raisedBy', isEqualTo: 'farmer')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('tickets')
+            .where('addedBy', isEqualTo: farmerEmail)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                final tickets = snapshot.data!.docs;
+          final tickets = snapshot.data!.docs;
 
-                if (tickets.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      "No farmer tickets found",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  );
-                }
+          if (tickets.isEmpty) {
+            return const Center(child: Text("No tickets found"));
+          }
 
-                // 🔽 SORT IN DART (LATEST FIRST)
-                tickets.sort((a, b) {
-                  final aTime =
-                      (a['createdAt'] as Timestamp?) ?? Timestamp.now();
-                  final bTime =
-                      (b['createdAt'] as Timestamp?) ?? Timestamp.now();
-                  return bTime.toDate().compareTo(aTime.toDate());
-                });
+          // 🔽 SORT IN DART (LATEST FIRST)
+          tickets.sort((a, b) {
+            final aTime = (a['createdAt'] as Timestamp?) ?? Timestamp.now();
+            final bTime = (b['createdAt'] as Timestamp?) ?? Timestamp.now();
+            return bTime.toDate().compareTo(aTime.toDate());
+          });
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: tickets.length,
-                  itemBuilder: (context, index) {
-                    final doc = tickets[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    return _ticketCard(context, doc.id, data);
-                  },
-                );
-              },
-            ),
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: tickets.length,
+            itemBuilder: (context, index) {
+              final doc = tickets[index];
+              final data = doc.data() as Map<String, dynamic>;
+              return _ticketCard(context, doc.id, data);
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -72,10 +63,10 @@ class AdminSupportPage extends StatelessWidget {
   ) {
     Color statusColor;
     switch (t['status']) {
-      case "Resolved":
+      case 'Resolved':
         statusColor = Colors.green;
         break;
-      case "Not Resolved":
+      case 'Not Resolved':
         statusColor = Colors.red;
         break;
       default:
@@ -95,22 +86,26 @@ class AdminSupportPage extends StatelessWidget {
           t['subject'],
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text("Farmer: ${t['userEmail']}\nStatus: ${t['status']}"),
+        subtitle: Text("Order ID: ${t['orderId']}\nStatus: ${t['status']}"),
         isThreeLine: true,
-        trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-        onTap: () => _openAdminTicketModal(context, ticketId, t),
+        trailing: TextButton(
+          child: const Text("View"),
+          onPressed: () => _openTicketModal(context, ticketId, t),
+        ),
       ),
     );
   }
 
   // ===================== MODAL =====================
-  void _openAdminTicketModal(
+  void _openTicketModal(
     BuildContext context,
     String ticketId,
     Map<String, dynamic> t,
   ) {
     String selectedStatus = t['status'] ?? "Pending";
     final replyController = TextEditingController(text: t['reply'] ?? "");
+
+    final bool isResolved = selectedStatus == "Resolved";
 
     showModalBottomSheet(
       context: context,
@@ -144,7 +139,9 @@ class AdminSupportPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
 
-                    _section("Farmer Email", t['userEmail']),
+                    _row("Order ID", t['orderId']),
+                    const SizedBox(height: 12),
+
                     _section("Subject", t['subject']),
                     _section("Description", t['description']),
 
@@ -187,7 +184,7 @@ class AdminSupportPage extends StatelessWidget {
                     const SizedBox(height: 14),
 
                     const Text(
-                      "Reply to Farmer",
+                      "Reply",
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
@@ -197,9 +194,12 @@ class AdminSupportPage extends StatelessWidget {
                     TextField(
                       controller: replyController,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText: "Type reply here...",
-                        border: OutlineInputBorder(),
+                      enabled: selectedStatus != "Resolved",
+                      decoration: InputDecoration(
+                        hintText: selectedStatus == "Resolved"
+                            ? "Ticket resolved. Reply disabled."
+                            : "Type your reply...",
+                        border: const OutlineInputBorder(),
                       ),
                     ),
 
@@ -210,7 +210,7 @@ class AdminSupportPage extends StatelessWidget {
                       height: 45,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal.shade700,
+                          backgroundColor: Colors.deepPurple,
                         ),
                         onPressed: () async {
                           await FirebaseFirestore.instance
@@ -220,7 +220,6 @@ class AdminSupportPage extends StatelessWidget {
                                 'status': selectedStatus,
                                 'reply': replyController.text.trim(),
                                 'repliedAt': Timestamp.now(),
-                                'repliedBy': 'admin',
                               });
 
                           Navigator.pop(context);
@@ -256,6 +255,16 @@ class AdminSupportPage extends StatelessWidget {
           Text(value, style: const TextStyle(fontSize: 14)),
         ],
       ),
+    );
+  }
+
+  Widget _row(String l, String r) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(l, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(r),
+      ],
     );
   }
 }

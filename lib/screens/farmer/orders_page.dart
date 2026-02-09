@@ -34,7 +34,6 @@ class OrdersPage extends StatelessWidget {
               ),
             ),
           ),
-
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
@@ -45,25 +44,41 @@ class OrdersPage extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final orders = snapshot.data!.docs.where((doc) {
-                  final products = (doc['products'] as List);
-                  return products.any((p) => p['addedBy'] == farmerEmail);
-                }).toList();
+                /// 🔥 FILTER FARMER ORDERS
+                final List<QueryDocumentSnapshot> orders = snapshot.data!.docs
+                    .where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final List products = data['products'] ?? [];
+                      return products.any((p) => p['addedBy'] == farmerEmail);
+                    })
+                    .toList();
 
                 if (orders.isEmpty) {
                   return const Center(child: Text("No Orders Found"));
                 }
 
+                /// 🔽 SORT IN DART (LATEST FIRST)
+                orders.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+
+                  final aTime =
+                      (aData['createdAt'] as Timestamp?) ?? Timestamp.now();
+                  final bTime =
+                      (bData['createdAt'] as Timestamp?) ?? Timestamp.now();
+
+                  return bTime.toDate().compareTo(aTime.toDate());
+                });
+
                 return ListView(
                   children: orders.map((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-
                     return _orderTile(
                       context,
                       orderId: doc.id,
                       customer: data['orderBy'],
                       amount: "₹${data['grandTotal']}",
-                      status: data['status'],
+                      status: data['status'].toString().toUpperCase(),
                       orderData: data,
                     );
                   }).toList(),

@@ -1,10 +1,19 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'order_details_page.dart';
 
-class OrdersPage extends StatelessWidget {
-  const OrdersPage({super.key}); // NOT const
+class OrdersPage extends StatefulWidget {
+  const OrdersPage({super.key});
+
+  @override
+  State<OrdersPage> createState() => _OrdersPageState();
+}
+
+class _OrdersPageState extends State<OrdersPage> {
+  String _search = "";
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +30,7 @@ class OrdersPage extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: TextField(
               decoration: InputDecoration(
-                hintText: "Search orders...",
+                hintText: "Search by Order ID / Customer email",
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
                 fillColor: Colors.grey.shade200,
@@ -30,52 +39,68 @@ class OrdersPage extends StatelessWidget {
                   borderSide: BorderSide.none,
                 ),
               ),
+              onChanged: (v) {
+                setState(() {
+                  _search = v.toLowerCase();
+                });
+              },
             ),
           ),
-
-          // 🏷 STATUS FILTER (UI ONLY)
-          SizedBox(
-            height: 45,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: const [
-                _StatusChip("All", Colors.grey),
-                _StatusChip("Pending", Colors.orange),
-                _StatusChip("Approved", Colors.green),
-                _StatusChip("Delivered", Colors.blue),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 10),
 
           // 📋 ORDERS LIST
           Expanded(
-            child: ListView(
-              children: [
-                _orderCard(
-                  context,
-                  orderId: "#ORD1001",
-                  customer: "Ravi Kumar",
-                  amount: "₹120",
-                  status: "Pending",
-                ),
-                _orderCard(
-                  context,
-                  orderId: "#ORD1002",
-                  customer: "Suresh",
-                  amount: "₹340",
-                  status: "Approved",
-                ),
-                _orderCard(
-                  context,
-                  orderId: "#ORD1003",
-                  customer: "Anitha",
-                  amount: "₹220",
-                  status: "Delivered",
-                ),
-              ],
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('orders')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = snapshot.data!.docs;
+
+                if (docs.isEmpty) {
+                  return const Center(child: Text("No orders found"));
+                }
+
+                // 🔍 SEARCH FILTER (DART)
+                final filtered = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final orderId = (data['orderId'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final customer = (data['orderBy'] ?? '')
+                      .toString()
+                      .toLowerCase();
+
+                  return orderId.contains(_search) ||
+                      customer.contains(_search);
+                }).toList();
+
+                if (filtered.isEmpty) {
+                  return const Center(child: Text("No matching orders"));
+                }
+
+                return ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final doc = filtered[index];
+                    final data = doc.data() as Map<String, dynamic>;
+
+                    return _orderCard(
+                      context,
+                      orderDocId: doc.id,
+                      orderId: data['orderId'] ?? "-",
+                      customer: data['orderBy'] ?? "-",
+                      amount: "₹${data['grandTotal'] ?? 0}",
+                      status: data['status'] ?? "-",
+                      products: data['products'] ?? [],
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
@@ -83,20 +108,22 @@ class OrdersPage extends StatelessWidget {
     );
   }
 
-  // ORDER CARD
+  // ================= ORDER CARD =================
   Widget _orderCard(
     BuildContext context, {
+    required String orderDocId,
     required String orderId,
     required String customer,
     required String amount,
     required String status,
+    required List products,
   }) {
     Color statusColor;
     switch (status) {
-      case "Approved":
+      case "approved":
         statusColor = Colors.green;
         break;
-      case "Delivered":
+      case "delivered":
         statusColor = Colors.blue;
         break;
       default:
@@ -115,12 +142,19 @@ class OrdersPage extends StatelessWidget {
           orderId,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text("Customer: $customer\nAmount: $amount"),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Customer: $customer"),
+            _farmerNames(products),
+            Text("Amount: $amount"),
+          ],
+        ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              status,
+              status.toUpperCase(),
               style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
@@ -130,30 +164,48 @@ class OrdersPage extends StatelessWidget {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => OrderDetailsPage()),
+            MaterialPageRoute(
+              builder: (_) => OrderDetailsPage(orderId: orderDocId),
+            ),
           );
         },
       ),
     );
   }
-}
 
-// STATUS CHIP (UI ONLY)
-class _StatusChip extends StatelessWidget {
-  final String label;
-  final Color color;
+  // ================= FARMER NAMES =================
+  Widget _farmerNames(List products) {
+    // collect unique farmer emails
+    final emails = <String>{};
+    for (var p in products) {
+      if (p['addedBy'] != null) {
+        emails.add(p['addedBy']);
+      }
+    }
 
-  const _StatusChip(this.label, this.color);
+    if (emails.isEmpty) {
+      return const Text("Farmer: -");
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Chip(
-        label: Text(label),
-        backgroundColor: color.withOpacity(0.15),
-        labelStyle: TextStyle(color: color),
-      ),
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('farmers')
+          .where('email', whereIn: emails.toList())
+          .get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Text("Farmer: loading...");
+        }
+
+        final names = snapshot.data!.docs
+            .map((d) => d['name'].toString())
+            .toList();
+
+        return Text(
+          "Farmer: ${names.join(', ')}",
+          style: const TextStyle(fontSize: 13),
+        );
+      },
     );
   }
 }

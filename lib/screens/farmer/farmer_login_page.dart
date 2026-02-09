@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'farmer_dashboard_page.dart';
-import 'forgot_password_page.dart';
 import 'create_farmer_account_page.dart';
 
 class FarmerLoginPage extends StatefulWidget {
@@ -195,24 +194,6 @@ class _FarmerLoginPageState extends State<FarmerLoginPage> {
                 ),
 
                 const SizedBox(height: 10),
-
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ForgotPasswordPage(),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      "Forgot Password?",
-                      style: TextStyle(color: Colors.green),
-                    ),
-                  ),
-                ),
 
                 const SizedBox(height: 15),
 

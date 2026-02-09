@@ -1,13 +1,12 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'users_page.dart';
+import 'admin_notification.dart';
 import 'farmers_page.dart';
 import 'customers_page.dart';
 import 'products_page.dart';
 import 'orders_page.dart';
 import 'reports_page.dart';
-import 'settings_page.dart';
 import 'support_page.dart';
 import 'admin_profile_page.dart';
 
@@ -55,8 +54,9 @@ class AdminDashboardPage extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.notifications),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("No new notifications")),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AdminNotificationsPage()),
               );
             },
           ),
@@ -123,7 +123,6 @@ class AdminDashboardPage extends StatelessWidget {
                 crossAxisSpacing: 15,
                 mainAxisSpacing: 15,
                 children: [
-                  _card(context, Icons.people, "Users", UsersPage()),
                   _card(context, Icons.agriculture, "Farmers", FarmersPage()),
                   _card(
                     context,
@@ -135,12 +134,16 @@ class AdminDashboardPage extends StatelessWidget {
                     context,
                     Icons.shopping_bag,
                     "Products",
-                    ProductsPage(),
+                    AdminProductsPage(),
                   ),
                   _card(context, Icons.receipt_long, "Orders", OrdersPage()),
                   _card(context, Icons.bar_chart, "Reports", ReportsPage()),
-                  _card(context, Icons.settings, "Settings", SettingsPage()),
-                  _card(context, Icons.support_agent, "Support", SupportPage()),
+                  _card(
+                    context,
+                    Icons.support_agent,
+                    "Support",
+                    AdminSupportPage(),
+                  ),
                 ],
               ),
             ),

@@ -1,10 +1,36 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class ReportsPage extends StatelessWidget {
-  const ReportsPage({super.key}); // NOT const
+class ReportsPage extends StatefulWidget {
+  const ReportsPage({super.key});
 
+  @override
+  State<ReportsPage> createState() => _ReportsPageState();
+}
+
+class _ReportsPageState extends State<ReportsPage> {
+  String _period = "All";
+
+  // ================= DATE FILTER =================
+  DateTime? _fromDate() {
+    final now = DateTime.now();
+    switch (_period) {
+      case "Today":
+        return DateTime(now.year, now.month, now.day);
+      case "This Week":
+        return now.subtract(const Duration(days: 7));
+      case "This Month":
+        return DateTime(now.year, now.month, 1);
+      case "This Year":
+        return DateTime(now.year, 1, 1);
+      default:
+        return null;
+    }
+  }
+
+  // ================= BUILD =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -14,155 +40,157 @@ class ReportsPage extends StatelessWidget {
         backgroundColor: Colors.indigo,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 📊 OVERVIEW
-            const Text(
-              "Overview",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
+      body: FutureBuilder<List<QuerySnapshot>>(
+        future: Future.wait([
+          FirebaseFirestore.instance.collection('customers').get(),
+          FirebaseFirestore.instance.collection('farmers').get(),
+          FirebaseFirestore.instance.collection('orders').get(),
+        ]),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 15,
-              mainAxisSpacing: 15,
-              children: const [
-                _StatCard(
-                  title: "Total Users",
-                  value: "1,250",
-                  icon: Icons.people,
-                  color: Colors.blue,
+          final customers = snapshot.data![0].docs;
+          final farmers = snapshot.data![1].docs;
+          final orders = snapshot.data![2].docs;
+
+          final from = _fromDate();
+
+          final filteredOrders = from == null
+              ? orders
+              : orders.where((o) {
+                  final data = o.data() as Map<String, dynamic>;
+                  if (data['createdAt'] == null) return false;
+                  final d = (data['createdAt'] as Timestamp).toDate();
+                  return d.isAfter(from);
+                }).toList();
+
+          double revenue = 0;
+          for (var o in filteredOrders) {
+            final data = o.data() as Map<String, dynamic>;
+            revenue += (data['grandTotal'] ?? 0).toDouble();
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ================= OVERVIEW =================
+                const Text(
+                  "Overview",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                _StatCard(
-                  title: "Farmers",
-                  value: "320",
-                  icon: Icons.agriculture,
-                  color: Colors.green,
+                const SizedBox(height: 12),
+
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 15,
+                  mainAxisSpacing: 15,
+                  children: [
+                    _StatCard(
+                      title: "Customers",
+                      value: customers.length.toString(),
+                      icon: Icons.people,
+                      color: Colors.blue,
+                    ),
+                    _StatCard(
+                      title: "Farmers",
+                      value: farmers.length.toString(),
+                      icon: Icons.agriculture,
+                      color: Colors.green,
+                    ),
+                    _StatCard(
+                      title: "Orders",
+                      value: filteredOrders.length.toString(),
+                      icon: Icons.receipt_long,
+                      color: Colors.orange,
+                    ),
+                    _StatCard(
+                      title: "Revenue",
+                      value: "₹${revenue.toStringAsFixed(0)}",
+                      icon: Icons.currency_rupee,
+                      color: Colors.purple,
+                    ),
+                  ],
                 ),
-                _StatCard(
-                  title: "Orders",
-                  value: "980",
-                  icon: Icons.receipt_long,
-                  color: Colors.orange,
+
+                const SizedBox(height: 25),
+
+                // ================= FILTER =================
+                const Text(
+                  "Report Period",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                _StatCard(
-                  title: "Revenue",
-                  value: "₹1.8L",
-                  icon: Icons.currency_rupee,
-                  color: Colors.purple,
+                const SizedBox(height: 10),
+
+                Wrap(
+                  spacing: 10,
+                  children: [
+                    _filterChip("All"),
+                    _filterChip("Today"),
+                    _filterChip("This Week"),
+                    _filterChip("This Month"),
+                    _filterChip("This Year"),
+                  ],
                 ),
+
+                const SizedBox(height: 30),
+
+                // ================= RECENT ACTIVITY =================
+                const Text(
+                  "Recent Activity",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+
+                ...filteredOrders.take(5).map((o) {
+                  final data = o.data() as Map<String, dynamic>;
+                  final orderNo = data['orderId'] ?? o.id;
+
+                  return _activityTile(
+                    icon: Icons.shopping_cart,
+                    title: "New Order",
+                    subtitle: "Order $orderNo",
+                    time: _timeAgo(data['createdAt']),
+                  );
+                }),
               ],
             ),
-
-            const SizedBox(height: 25),
-
-            // 🕒 FILTER
-            const Text(
-              "Report Period",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-
-            Wrap(
-              spacing: 10,
-              children: const [
-                _FilterChip("Today"),
-                _FilterChip("This Week"),
-                _FilterChip("This Month"),
-                _FilterChip("This Year"),
-              ],
-            ),
-
-            const SizedBox(height: 30),
-
-            // 📈 ANALYTICS SECTIONS
-            const Text(
-              "Analytics",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-
-            _reportSection(
-              title: "Sales Overview",
-              subtitle: "Daily & monthly sales performance",
-              icon: Icons.show_chart,
-            ),
-            _reportSection(
-              title: "Order Trends",
-              subtitle: "Placed vs Delivered orders",
-              icon: Icons.trending_up,
-            ),
-            _reportSection(
-              title: "User Growth",
-              subtitle: "New customer & farmer registrations",
-              icon: Icons.group_add,
-            ),
-
-            const SizedBox(height: 30),
-
-            // 🧾 RECENT ACTIVITY
-            const Text(
-              "Recent Activity",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-
-            _activityTile(
-              icon: Icons.shopping_cart,
-              title: "New Order",
-              subtitle: "Order placed by Ravi Kumar",
-              time: "2 mins ago",
-            ),
-            _activityTile(
-              icon: Icons.person_add,
-              title: "New Farmer",
-              subtitle: "Ramesh registered as farmer",
-              time: "1 hour ago",
-            ),
-            _activityTile(
-              icon: Icons.check_circle,
-              title: "Order Delivered",
-              subtitle: "Order #ORD1023 delivered",
-              time: "Today",
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 📊 REPORT SECTION CARD
-  Widget _reportSection({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.indigo.withOpacity(0.15),
-          child: Icon(icon, color: Colors.indigo),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {
-          // future navigation / charts page
+          );
         },
       ),
     );
   }
 
-  // 🧾 ACTIVITY TILE
+  // ================= FILTER CHIP =================
+  Widget _filterChip(String label) {
+    final selected = _period == label;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      selectedColor: Colors.indigo.withOpacity(0.25),
+      onSelected: (_) {
+        setState(() => _period = label);
+      },
+    );
+  }
+
+  // ================= TIME AGO =================
+  String _timeAgo(dynamic ts) {
+    if (ts == null) return "-";
+    final d = (ts as Timestamp).toDate();
+    final diff = DateTime.now().difference(d);
+
+    if (diff.inMinutes < 60) return "${diff.inMinutes} mins ago";
+    if (diff.inHours < 24) return "${diff.inHours} hrs ago";
+    return "${diff.inDays} days ago";
+  }
+
+  // ================= ACTIVITY TILE =================
   Widget _activityTile({
     required IconData icon,
     required String title,
@@ -187,7 +215,7 @@ class ReportsPage extends StatelessWidget {
   }
 }
 
-// 📦 STAT CARD
+// ================= STAT CARD =================
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
@@ -210,6 +238,7 @@ class _StatCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min, // 🔥 overflow fix
           children: [
             CircleAvatar(
               backgroundColor: color.withOpacity(0.15),
@@ -221,26 +250,10 @@ class _StatCard extends StatelessWidget {
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 5),
-            Text(title),
+            Text(title, textAlign: TextAlign.center),
           ],
         ),
       ),
-    );
-  }
-}
-
-// 🏷 FILTER CHIP
-class _FilterChip extends StatelessWidget {
-  final String label;
-
-  const _FilterChip(this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label),
-      backgroundColor: Colors.indigo.withOpacity(0.15),
-      labelStyle: const TextStyle(color: Colors.indigo),
     );
   }
 }

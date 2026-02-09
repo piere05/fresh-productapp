@@ -30,7 +30,6 @@ class MyOrdersPage extends StatelessWidget {
           },
         ),
       ),
-
       body: user == null
           ? const Center(child: Text("Please login"))
           : StreamBuilder<QuerySnapshot>(
@@ -43,17 +42,30 @@ class MyOrdersPage extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final orders = snapshot.data!.docs;
+                final docs = snapshot.data!.docs;
 
-                if (orders.isEmpty) {
+                if (docs.isEmpty) {
                   return const Center(child: Text("No orders found"));
                 }
 
+                // 🔽 SORT IN DART (LATEST FIRST)
+                docs.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+
+                  final aTime =
+                      (aData['createdAt'] as Timestamp?) ?? Timestamp.now();
+                  final bTime =
+                      (bData['createdAt'] as Timestamp?) ?? Timestamp.now();
+
+                  return bTime.toDate().compareTo(aTime.toDate());
+                });
+
                 return ListView.builder(
                   padding: const EdgeInsets.all(12),
-                  itemCount: orders.length,
+                  itemCount: docs.length,
                   itemBuilder: (context, index) {
-                    final doc = orders[index];
+                    final doc = docs[index];
                     final data = doc.data() as Map<String, dynamic>;
                     return _orderCard(context, data, doc.id);
                   },
@@ -63,7 +75,7 @@ class MyOrdersPage extends StatelessWidget {
     );
   }
 
-  // 🧾 ORDER CARD (UI SAME)
+  // 🧾 ORDER CARD (UI UNCHANGED)
   Widget _orderCard(
     BuildContext context,
     Map<String, dynamic> order,
@@ -93,9 +105,8 @@ class MyOrdersPage extends StatelessWidget {
         paymentIcon = Icons.money;
     }
 
-    final createdAt = order['createdAt'] != null
-        ? (order['createdAt'] as Timestamp).toDate()
-        : DateTime.now();
+    final DateTime createdAt =
+        (order['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
 
     return Card(
       elevation: 4,
@@ -107,7 +118,7 @@ class MyOrdersPage extends StatelessWidget {
           child: const Icon(Icons.receipt_long, color: Colors.blue),
         ),
         title: Text(
-          "#${orderId.substring(0, 6).toUpperCase()}",
+          "#${orderId.toUpperCase()}",
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Column(

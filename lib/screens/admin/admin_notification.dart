@@ -2,21 +2,19 @@
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import 'orders_page.dart';
+import 'support_page.dart';
 
-class NotificationsPage extends StatelessWidget {
-  const NotificationsPage({super.key});
+class AdminNotificationsPage extends StatelessWidget {
+  const AdminNotificationsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final farmerEmail = FirebaseAuth.instance.currentUser!.email!;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       appBar: AppBar(
-        title: const Text("Notifications"),
+        title: const Text("Admin Notifications"),
         centerTitle: true,
         backgroundColor: Colors.indigo,
       ),
@@ -30,7 +28,7 @@ class NotificationsPage extends StatelessWidget {
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('tickets')
-                .where('addedBy', isEqualTo: farmerEmail)
+                .where('sentTo', isEqualTo: 'admin') // 🔥 admin-only tickets
                 .snapshots(),
             builder: (context, ticketSnapshot) {
               if (!ticketSnapshot.hasData) {
@@ -39,39 +37,28 @@ class NotificationsPage extends StatelessWidget {
 
               final List<_NotificationItem> items = [];
 
-              // -------- ORDERS ----------
+              // ================= ORDERS =================
               for (var doc in orderSnapshot.data!.docs) {
                 final data = doc.data() as Map<String, dynamic>;
-                final List products = data['products'] ?? [];
 
-                bool belongsToFarmer = false;
-                for (var p in products) {
-                  if (p['addedBy'] == farmerEmail) {
-                    belongsToFarmer = true;
-                    break;
-                  }
-                }
-
-                if (belongsToFarmer) {
-                  items.add(
-                    _NotificationItem(
-                      icon: Icons.shopping_cart,
-                      title: "New Order Received",
-                      message: "Order #${doc.id}",
-                      color: Colors.green,
-                      createdAt: data['createdAt'],
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => OrdersPage()),
-                        );
-                      },
-                    ),
-                  );
-                }
+                items.add(
+                  _NotificationItem(
+                    icon: Icons.shopping_cart,
+                    title: "New Order Received",
+                    message: "Order #${data['orderId'] ?? doc.id}",
+                    color: Colors.green,
+                    createdAt: data['createdAt'],
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => OrdersPage()),
+                      );
+                    },
+                  ),
+                );
               }
 
-              // -------- TICKETS ----------
+              // ================= TICKETS =================
               for (var doc in ticketSnapshot.data!.docs) {
                 final data = doc.data() as Map<String, dynamic>;
 
@@ -79,25 +66,26 @@ class NotificationsPage extends StatelessWidget {
                   _NotificationItem(
                     icon: Icons.support_agent,
                     title: "New Support Ticket",
-                    message: data['subject'],
+                    message: data['subject'] ?? "Support request",
                     color: Colors.orange,
                     createdAt: data['createdAt'],
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => TicketDetailsPage(ticketId: doc.id),
-                        ),
+                        MaterialPageRoute(builder: (_) => AdminSupportPage()),
                       );
                     },
                   ),
                 );
               }
 
-              // -------- SORT IN DART (NO INDEX) ----------
-              items.sort(
-                (a, b) => b.createdAt.toDate().compareTo(a.createdAt.toDate()),
-              );
+              // ================= SORT (SAFE) =================
+              items.sort((a, b) {
+                final aTime = a.createdAt?.toDate();
+                final bTime = b.createdAt?.toDate();
+                if (aTime == null || bTime == null) return 0;
+                return bTime.compareTo(aTime);
+              });
 
               if (items.isEmpty) {
                 return const Center(child: Text("No notifications"));
@@ -125,7 +113,8 @@ class NotificationsPage extends StatelessWidget {
     );
   }
 
-  String _formatTime(Timestamp t) {
+  String _formatTime(Timestamp? t) {
+    if (t == null) return "-";
     final d = t.toDate();
     return "${d.day}/${d.month}/${d.year}";
   }
@@ -137,7 +126,7 @@ class _NotificationItem {
   final String title;
   final String message;
   final Color color;
-  final Timestamp createdAt;
+  final Timestamp? createdAt;
   final VoidCallback onTap;
 
   _NotificationItem({
@@ -187,21 +176,6 @@ class _NotificationTile extends StatelessWidget {
         ),
         onTap: onTap,
       ),
-    );
-  }
-}
-
-// ================= TICKET PAGE =================
-class TicketDetailsPage extends StatelessWidget {
-  final String ticketId;
-
-  const TicketDetailsPage({super.key, required this.ticketId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Ticket $ticketId")),
-      body: Center(child: Text("Ticket details for $ticketId")),
     );
   }
 }

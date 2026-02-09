@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../role_selection/role_selection_page.dart';
 import 'browse_products_page.dart';
 import 'cart_page.dart';
 import 'my_orders_page.dart';
@@ -20,6 +21,7 @@ class CustomerDashboardPage extends StatelessWidget {
   }
 
   // 🔐 Logout confirmation (SAFE)
+  // 🔐 Logout confirmation (GO TO LOGIN PAGE)
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -34,7 +36,12 @@ class CustomerDashboardPage extends StatelessWidget {
           TextButton(
             onPressed: () {
               Navigator.pop(context); // close dialog
-              Navigator.popUntil(context, (route) => route.isFirst);
+
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
+                (_) => false,
+              );
             },
             child: const Text("Logout"),
           ),

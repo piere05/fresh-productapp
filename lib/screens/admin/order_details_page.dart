@@ -1,7 +1,12 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OrderDetailsPage extends StatelessWidget {
-  const OrderDetailsPage({super.key}); // NOT const
+  final String orderId; // Firestore document id
+
+  const OrderDetailsPage({super.key, required this.orderId});
 
   @override
   Widget build(BuildContext context) {
@@ -12,145 +17,133 @@ class OrderDetailsPage extends StatelessWidget {
         backgroundColor: Colors.deepPurple,
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // ORDER SUMMARY
-            _sectionCard(
-              title: "Order Summary",
-              child: Column(
-                children: [
-                  _InfoText("Order ID", "#ORD12345"),
-                  _InfoText("Order Date", "15 Aug 2026"),
-                  _InfoText("Status", "Pending"),
-                ],
-              ),
-            ),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderId)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            const SizedBox(height: 15),
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final products = List<Map<String, dynamic>>.from(
+            data['products'] ?? [],
+          );
+          final deliveryAddress =
+              data['deliveryAddress'] as Map<String, dynamic>?;
 
-            // CUSTOMER DETAILS
-            _sectionCard(
-              title: "Customer Details",
-              child: Column(
-                children: [
-                  _InfoText("Name", "Ravi Kumar"),
-                  _InfoText("Email", "ravi@gmail.com"),
-                  _InfoText("Phone", "+91 98765 43210"),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // FARMER DETAILS
-            _sectionCard(
-              title: "Farmer Details",
-              child: Column(
-                children: [
-                  _InfoText("Name", "Ramesh Kumar"),
-                  _InfoText("Location", "Coimbatore"),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            // PRODUCT LIST
-            _sectionCard(
-              title: "Products",
-              child: Column(
-                children: [
-                  _ProductRow("Tomatoes", "2 kg", "₹80"),
-                  _ProductRow("Onions", "1 kg", "₹40"),
-                  const Divider(),
-                  _InfoText("Total Amount", "₹120"),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 25),
-
-            // ACTION BUTTONS
-            Row(
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                // ORDER SUMMARY
+                _sectionCard(
+                  title: "Order Summary",
+                  child: Column(
+                    children: [
+                      _InfoText("Order ID", data['orderId'] ?? "-"),
+                      _InfoText("Order Date", _formatDate(data['createdAt'])),
+                      _InfoText(
+                        "Status",
+                        data['status']?.toString().toUpperCase() ?? "-",
                       ),
-                    ),
-                    onPressed: () {
-                      _showSnack(context, "Order Approved (Demo)");
-                    },
-                    child: const Text("Approve"),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () {
-                      _showSnack(context, "Order Rejected (Demo)");
-                    },
-                    child: const Text("Reject"),
+
+                const SizedBox(height: 15),
+
+                // CUSTOMER DETAILS (FROM deliveryAddress)
+                _sectionCard(
+                  title: "Customer Details",
+                  child: Column(
+                    children: [
+                      _InfoText("Name", deliveryAddress?['name'] ?? "-"),
+                      _InfoText("Email", data['orderBy'] ?? "-"),
+                      _InfoText("Phone", deliveryAddress?['phone'] ?? "-"),
+                      _InfoText("Address", _formatAddress(deliveryAddress)),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                // FARMER DETAILS
+                _farmerSection(products),
+
+                const SizedBox(height: 15),
+
+                // PRODUCTS
+                _sectionCard(
+                  title: "Products",
+                  child: Column(
+                    children: [
+                      for (final p in products)
+                        _ProductRow(
+                          p['productName'] ?? "-",
+                          "Qty: ${p['qty']}",
+                          "₹${p['total']}",
+                        ),
+                      const Divider(),
+                      _InfoText("Items Total", "₹${data['itemsTotal']}"),
+                      _InfoText("Delivery Fee", "₹${data['deliveryFee']}"),
+                      _InfoText("Grand Total", "₹${data['grandTotal']}"),
+                    ],
                   ),
                 ),
               ],
             ),
-
-            const SizedBox(height: 10),
-
-            // DELIVERED
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () {
-                  _showSnack(context, "Order Delivered (Demo)");
-                },
-                child: const Text("Mark as Delivered"),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // CANCEL
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () {
-                  _confirmCancel(context);
-                },
-                child: const Text("Cancel Order"),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  // SECTION CARD
+  // ================= FARMERS =================
+  Widget _farmerSection(List<Map<String, dynamic>> products) {
+    final farmerEmails = <String>{};
+
+    for (final p in products) {
+      if (p['addedBy'] != null) {
+        farmerEmails.add(p['addedBy']);
+      }
+    }
+
+    if (farmerEmails.isEmpty) {
+      return _sectionCard(
+        title: "Farmer Details",
+        child: const Text("No farmer info"),
+      );
+    }
+
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('farmers')
+          .where('email', whereIn: farmerEmails.toList())
+          .get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return _sectionCard(
+            title: "Farmer Details",
+            child: const Text("Loading..."),
+          );
+        }
+
+        final names = snapshot.data!.docs
+            .map((d) => d['name'].toString())
+            .toList();
+
+        return _sectionCard(
+          title: "Farmer Details",
+          child: _InfoText("Name(s)", names.join(", ")),
+        );
+      },
+    );
+  }
+
+  // ================= HELPERS =================
   Widget _sectionCard({required String title, required Widget child}) {
     return Card(
       elevation: 4,
@@ -172,39 +165,19 @@ class OrderDetailsPage extends StatelessWidget {
     );
   }
 
-  // SNACKBAR
-  void _showSnack(BuildContext context, String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  static String _formatDate(dynamic ts) {
+    if (ts == null) return "-";
+    final d = (ts as Timestamp).toDate();
+    return "${d.day}-${d.month}-${d.year}";
   }
 
-  // CANCEL CONFIRM
-  void _confirmCancel(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Cancel Order"),
-        content: const Text("Are you sure you want to cancel this order?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("No"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text("Yes, Cancel"),
-          ),
-        ],
-      ),
-    );
+  static String _formatAddress(Map<String, dynamic>? addr) {
+    if (addr == null) return "-";
+    return "${addr['address']}, ${addr['city']} - ${addr['pincode']}";
   }
 }
 
-// INFO TEXT
+// ================= UI WIDGETS =================
 class _InfoText extends StatelessWidget {
   final String label;
   final String value;
@@ -230,7 +203,6 @@ class _InfoText extends StatelessWidget {
   }
 }
 
-// PRODUCT ROW
 class _ProductRow extends StatelessWidget {
   final String name;
   final String qty;

@@ -49,7 +49,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== ADDRESS SECTION =====================
+  // ===================== ADDRESS =====================
   Widget _addressSection() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -67,7 +67,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
         final docs = snapshot.data!.docs;
 
-        // ✅ FIX: AUTO SELECT FIRST ADDRESS WITH setState
         if (_selectedAddressId == null && docs.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
@@ -121,7 +120,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== ORDER SUMMARY =====================
+  // ===================== SUMMARY =====================
   Widget _orderSummarySection() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -140,8 +139,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         int itemsTotal = 0;
 
         for (var d in snapshot.data!.docs) {
-          final int qty = (d['qty'] as num).toInt();
-          final int price = (d['price'] as num).toInt();
+          final qty = (d['qty'] as num).toInt();
+          final price = (d['price'] as num).toInt();
           totalQty += qty;
           itemsTotal += qty * price;
         }
@@ -208,7 +207,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== ORDER SAVE (UNCHANGED) =====================
+  // ===================== ORDER SAVE (ID FROM ORDERS COLLECTION) =====================
   Future<void> _placeOrder() async {
     final firestore = FirebaseFirestore.instance;
 
@@ -217,6 +216,26 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .where('userEmail', isEqualTo: user!.email)
         .get();
 
+    if (cartSnap.docs.isEmpty) return;
+
+    // 🔥 GET LAST ORDER ID
+    final lastOrderSnap = await firestore
+        .collection('orders')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+
+    int nextNumber = 1;
+
+    if (lastOrderSnap.docs.isNotEmpty) {
+      final lastId = lastOrderSnap.docs.first.id; // FRESH023
+      final numericPart =
+          int.tryParse(lastId.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      nextNumber = numericPart + 1;
+    }
+
+    final newOrderId = "FRESH${nextNumber.toString().padLeft(3, '0')}";
+
     final addressDoc = await firestore
         .collection('customers')
         .doc(user!.uid)
@@ -224,16 +243,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .doc(_selectedAddressId)
         .get();
 
-    if (cartSnap.docs.isEmpty) return;
-
     await firestore.runTransaction((transaction) async {
       int itemsTotal = 0;
       int totalQty = 0;
       final products = <Map<String, dynamic>>[];
 
       for (int i = 0; i < cartSnap.docs.length; i++) {
-        final cartDoc = cartSnap.docs[i];
-        final data = cartDoc.data();
+        final data = cartSnap.docs[i].data();
 
         final qty = (data['qty'] as num).toInt();
         final price = (data['price'] as num).toInt();
@@ -241,21 +257,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
         totalQty += qty;
         itemsTotal += total;
-
-        final productRef = firestore
-            .collection('products')
-            .doc(data['productId']);
-        final productSnap = await transaction.get(productRef);
-        final productData = productSnap.data() as Map<String, dynamic>;
-
-        int stock = (productData['currentStock'] as num).toInt();
-        int updatedStock = stock - qty;
-        if (updatedStock < 0) updatedStock = 0;
-
-        transaction.update(productRef, {
-          'currentStock': updatedStock,
-          'inStock': updatedStock > 0,
-        });
 
         products.add({
           'sno': i + 1,
@@ -268,9 +269,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         });
       }
 
-      final orderRef = firestore.collection('orders').doc();
-
-      transaction.set(orderRef, {
+      transaction.set(firestore.collection('orders').doc(newOrderId), {
+        'orderId': newOrderId,
         'orderBy': user!.email,
         'paymentMethod': _selectedPayment,
         'status': 'placed',
@@ -280,7 +280,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         'grandTotal': itemsTotal + deliveryFee,
         'deliveryAddress': addressDoc.data(),
         'products': products,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.now(),
       });
 
       for (final d in cartSnap.docs) {

@@ -28,23 +28,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     return password.length >= 8;
   }
 
-  void _showForgotPasswordDialog() async {
-    if (_emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Enter email first")));
-      return;
-    }
-
-    await FirebaseAuth.instance.sendPasswordResetEmail(
-      email: _emailController.text.trim(),
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Password reset link sent to email")),
-    );
-  }
-
   Future<void> _login() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -175,19 +158,6 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _showForgotPasswordDialog,
-                    child: const Text(
-                      "Forgot Password?",
-                      style: TextStyle(color: Colors.blue),
                     ),
                   ),
                 ),

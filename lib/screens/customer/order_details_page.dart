@@ -1,11 +1,13 @@
 // ignore_for_file: deprecated_member_use, use_build_context_synchronously
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import 'create_ticket_page.dart';
 
@@ -189,7 +191,6 @@ class OrderDetailsPage extends StatelessWidget {
                 "Invoice Date: ${DateTime.now().toString().split(' ').first}",
               ),
               pw.SizedBox(height: 20),
-
               pw.Table.fromTextArray(
                 headers: ["S.No", "Product", "Qty", "Price", "Total"],
                 data: products.map((p) {
@@ -202,9 +203,7 @@ class OrderDetailsPage extends StatelessWidget {
                   ];
                 }).toList(),
               ),
-
               pw.SizedBox(height: 20),
-
               pw.Align(
                 alignment: pw.Alignment.centerRight,
                 child: pw.Column(
@@ -219,7 +218,6 @@ class OrderDetailsPage extends StatelessWidget {
                   ],
                 ),
               ),
-
               pw.SizedBox(height: 30),
               pw.Text(
                 "Delivery Address",
@@ -235,7 +233,11 @@ class OrderDetailsPage extends StatelessWidget {
       ),
     );
 
-    await Printing.layoutPdf(onLayout: (_) async => pdf.save());
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(
+      "${dir.path}/invoice_${DateTime.now().millisecondsSinceEpoch}.pdf",
+    );
+    await file.writeAsBytes(await pdf.save());
   }
 
   // ================= UI HELPERS =================

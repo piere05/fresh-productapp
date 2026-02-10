@@ -16,18 +16,20 @@ class CheckoutPage extends StatefulWidget {
 }
 
 class _CheckoutPageState extends State<CheckoutPage> {
+  late Razorpay _razorpay;
+
   String _selectedPayment = "COD";
   String? _selectedAddressId;
 
   final user = FirebaseAuth.instance.currentUser;
   static const int deliveryFee = 50;
 
-  late Razorpay _razorpay;
   int _payableAmount = 0;
 
   @override
   void initState() {
     super.initState();
+
     _razorpay = Razorpay();
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
@@ -39,11 +41,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     super.dispose();
   }
 
-  // ===================== RAZORPAY =====================
-  void _openRazorpay(int amount) {
+  // ================= RAZORPAY =================
+  void _openRazorpay() {
     var options = {
       'key': 'rzp_test_S6S0e6VGPJ5FMo',
-      'amount': amount * 100,
+      'amount': _payableAmount * 100,
       'currency': 'INR',
       'name': 'Fresh Products',
       'description': 'Order Payment',
@@ -52,11 +54,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
       'timeout': 120,
     };
 
-    _razorpay.open(options);
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      debugPrint(e.toString());
+    }
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     await _placeOrder(paymentId: response.paymentId);
+
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const OrderPlacedPage()),
+      (_) => false,
+    );
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
@@ -68,9 +81,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== BUILD =====================
+  // ================= BUILD =================
   @override
   Widget build(BuildContext context) {
+    if (user == null) {
+      return const Scaffold(body: Center(child: Text("Please login")));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
@@ -78,26 +95,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
         backgroundColor: Colors.blue,
         centerTitle: true,
       ),
-      body: user == null
-          ? const Center(child: Text("Please login"))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _addressSection(),
-                  const SizedBox(height: 15),
-                  _orderSummarySection(),
-                  const SizedBox(height: 15),
-                  _paymentSection(),
-                  const SizedBox(height: 25),
-                  _placeOrderButton(),
-                ],
-              ),
-            ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _addressSection(),
+            const SizedBox(height: 15),
+            _orderSummarySection(),
+            const SizedBox(height: 15),
+            _paymentSection(),
+            const SizedBox(height: 25),
+            _placeOrderButton(),
+          ],
+        ),
+      ),
     );
   }
 
-  // ===================== ADDRESS =====================
+  // ================= ADDRESS =================
   Widget _addressSection() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -165,7 +180,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== SUMMARY =====================
+  // ================= SUMMARY =================
   Widget _orderSummarySection() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -210,7 +225,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== PAYMENT =====================
+  // ================= PAYMENT =================
   Widget _paymentSection() {
     return _card(
       "Payment Method",
@@ -233,29 +248,36 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
-  // ===================== PLACE ORDER =====================
+  // ================= PLACE ORDER =================
   Widget _placeOrderButton() {
     return SizedBox(
       width: double.infinity,
       height: 50,
-      child: ElevatedButton.icon(
-        icon: const Icon(Icons.check_circle),
-        label: const Text("Place Order", style: TextStyle(fontSize: 16)),
+      child: ElevatedButton(
         style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
         onPressed: _selectedAddressId == null
             ? null
-            : () {
+            : () async {
                 if (_selectedPayment == "ONLINE") {
-                  _openRazorpay(_payableAmount);
+                  _openRazorpay();
                 } else {
-                  _placeOrder();
+                  // ✅ COD FLOW
+                  await _placeOrder();
+
+                  if (!mounted) return;
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const OrderPlacedPage()),
+                    (_) => false,
+                  );
                 }
               },
+        child: const Text("Place Order", style: TextStyle(fontSize: 16)),
       ),
     );
   }
 
-  // ===================== ORDER SAVE =====================
+  // ================= SAVE ORDER (FIXED) =================
   Future<void> _placeOrder({String? paymentId}) async {
     final firestore = FirebaseFirestore.instance;
 
@@ -264,6 +286,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         .where('userEmail', isEqualTo: user!.email)
         .get();
 
+    // 🔹 Generate Order ID
     final lastOrderSnap = await firestore
         .collection('orders')
         .orderBy('createdAt', descending: true)
@@ -290,8 +313,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final products = <Map<String, dynamic>>[];
 
       for (var d in cartSnap.docs) {
-        final int qty = (d['qty'] as num).toInt();
-        final int price = (d['price'] as num).toInt();
+        final qty = (d['qty'] as num).toInt();
+        final price = (d['price'] as num).toInt();
 
         itemsTotal += qty * price;
 
@@ -300,7 +323,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           'qty': qty,
           'price': price,
           'total': qty * price,
-          'addedBy': d['addedBy'],
+          'addedBy': d['addedBy'], // ✅ FARMER ID
         });
 
         tx.delete(d.reference);
@@ -309,7 +332,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       tx.set(firestore.collection('orders').doc(orderId), {
         'orderId': orderId,
         'orderBy': user!.email,
-        'paymentMethod': _selectedPayment == "ONLINE" ? "Razorpay" : "COD",
+        'paymentMethod': paymentId == null ? "COD" : "Razorpay",
         'paymentId': paymentId,
         'status': 'placed',
         'itemsTotal': itemsTotal,
@@ -320,15 +343,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         'createdAt': Timestamp.now(),
       });
     });
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const OrderPlacedPage()),
-      (_) => false,
-    );
   }
 
-  // ===================== HELPERS =====================
+  // ================= HELPERS =================
   Widget _card(String title, Widget child) {
     return Card(
       elevation: 4,
